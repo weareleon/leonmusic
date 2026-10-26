@@ -16,7 +16,7 @@ A self-hosted music player that lives in your system tray. Point it at a folder 
 Requires Python 3.9+.
 
 ```bash
-git clone https://github.com/<your-username>/leon-music.git
+git clone https://github.com/weareleon/leonmusic
 cd leon-music
 pip install -r requirements.txt
 python leon_music.py
