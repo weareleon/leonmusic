@@ -17,7 +17,7 @@ Requires Python 3.9+.
 
 ```bash
 git clone https://github.com/weareleon/leonmusic
-cd leon-music
+cd leonmusic
 pip install -r requirements.txt
 python leon_music.py
 ```
