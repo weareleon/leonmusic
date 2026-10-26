@@ -116,10 +116,8 @@ All endpoints are under `/api`. Admin endpoints need an `X-Admin-Token` header o
 leon.music is built for personal, trusted-network use. Before exposing it to the internet, be aware that:
 
 - **Set an admin password during setup.** If none is set, anyone who can reach the server can log in as admin.
-- The password is stored **in plain text** in `config.json`.
 - The library itself (browsing and streaming) is **not password protected**. Only admin actions are.
 - Admin actions that fetch URLs (playlist covers, artist photos) make requests from your machine, so do not give admin access to people you don't trust.
-- CORS is currently open (`*`).
 - Artist photo lookup sends artist names to deezer.com. Turn it off in the admin panel if you'd rather not.
 
 Found a vulnerability? Please open a private security advisory on GitHub rather than a public issue.
