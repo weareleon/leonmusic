@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Build output
+build/
+dist/
+*.spec
+
+# Local data (lives in ~/.leon-music, but just in case)
+.leon-music/
+*.db
+config.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
