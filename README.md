@@ -1,19 +1,32 @@
 # leon.music
 
-A self-hosted music player that lives in your system tray. Point it at a folder and you're streaming from your browser in seconds. No cloud, no accounts, no subscriptions.
+A self-hosted music player that lives in your system tray. Point it at a folder and you're streaming from your browser in seconds. No cloud, no subscriptions.
 
 - **One folder = your library.** Top-level subfolders automatically become playlists.
 - **Streams to any browser** with HTTP range support, so seeking works.
 - **Reads tags and embedded cover art** from MP3, FLAC, M4A/AAC, OGG, Opus, WAV and WMA.
 - **Artist pages and "Essentials"** mixes, with artist photos fetched from Deezer (optional).
 - **Internet radio** for Icecast and Shoutcast streams, with live "now playing".
+- **Your own live radio stations**, broadcast to your Icecast server on a schedule you set.
+- **User accounts** with a personal "Made for You" home, Top Picks and **Rewind** listening stats.
+- **Charts, a New page, Search with genre and decade categories.**
 - **Admin panel** for theming, cover logos, playlist covers, radio stations and more.
 - **Light and dark themes**, responsive layout, mobile friendly.
 - Just two files: `leon_music.py` (server and tray app) and `frontend.html` (the player UI).
 
+## What's new: The Biggest Music Update
+
+- **Search page** with results for songs, artists and albums, plus *Browse categories*: a tinted tile for every genre on your server and a **Decades** row. Each genre and decade has its own page with feature cards, generated playlists, top songs, albums and artists.
+- **New page**: feature cards, newest songs, trending songs, new albums, new and updated playlists, this year's releases and new artists. Albums, Artists and Songs now live at the bottom of this page.
+- **Charts**: the server counts plays (after ~30 seconds of listening) and builds weekly, monthly and all-time Top 50, genre and artist charts, with rank movement and generated chart covers.
+- **Live radio**: an admin setup wizard to create your own stations (ready-made ones like *1, Hits, Club, Chill, Holiday* or custom ones with their own logo), schedule which playlists play when (including timed shows with custom covers), connect Icecast, and go live. Each station has a schedule page. Stations reconnect on their own if Icecast restarts.
+- **User accounts**: admins create accounts in Settings. New users pick the genres they like and get a personal mix. The home page shows **Made for You** mixes (New Music, Heavy Rotation, Your Essentials, Get Up!, Chill) and **Top Picks for You** once there's enough listening history.
+- **Rewind**: a Weekly Rewind (minutes, top artists and songs, day-by-day chart, new discoveries), a full Rewind by year and month, a Rewind playlist for every year, and an End of Year Rewind in December.
+- **Release-year scan** moved to the admin panel.
+
 ## Quick start
 
-Requires Python 3.9+.
+Requires Python 3.9+. Live radio uses [ffmpeg](https://ffmpeg.org/) (on your PATH or next to the app) to broadcast every audio format; without it, only MP3 files can be broadcast.
 
 ```bash
 git clone https://github.com/weareleon/leonmusic
@@ -60,9 +73,31 @@ Open <http://localhost:7733/admin> (or "Admin login" in Settings).
 - **Theme**: accent colour, hero banner image and tint.
 - **Artists**: toggle online photo lookup, force Essentials pages, set custom artist photos by URL.
 - **Radio**: add and remove stations (stream URL, optional logo and metadata URL).
+- **Release years**: look up missing release years on Deezer (used by the Decades categories).
 - **Security**: change the admin password.
 
 Playlist covers are generated from an image URL with the playlist name overlaid. Open a playlist while logged in as admin and use the Cover button. Playlist renaming is available in the same place.
+
+## User accounts and logins
+
+Admins add accounts under **Settings → Users** (passwords are 8+ characters and stored as salted scrypt hashes). As soon as the first account exists, or a library password is set, everyone has to log in:
+
+- **Users** log in with their username and password.
+- **The admin** logs in on the same screen with the username `admin` and the admin password.
+- **The shared library password** (if set) still works: leave the username blank.
+
+Listening history is per account and powers Heavy Rotation, Top Picks and Rewind. Logins are rate-limited.
+
+## Live radio
+
+Admins open **Radio → Set up live radio** to:
+
+1. Pick stations from templates or design custom ones (name, colours, logo style). The *Holiday* station plays exactly one Christmas playlist.
+2. Choose each station's normal rotation and add shows for specific days and times.
+3. Enter the Icecast host, port and **source** password (the `<source-password>` from `icecast.xml`), with a *Test connection* button.
+4. Go live and watch each station connect.
+
+Each station streams 128–320 kbps MP3 to its own Icecast mount and updates the song title on every track. If Icecast's address is `localhost`, listeners on other devices are relayed through leon.music automatically.
 
 ## Internet radio
 
@@ -74,8 +109,8 @@ Everything is stored in `~/.leon-music/`:
 
 | Path | Contents |
 | --- | --- |
-| `config.json` | Library path, name, theme, admin password, radio stations, cover settings |
-| `library.db` | SQLite index of your tracks and embedded covers |
+| `config.json` | Library path, name, theme, password hashes, radio stations, live-radio setup (incl. Icecast source password), cover settings |
+| `library.db` | SQLite index of your tracks and embedded covers, plays, user accounts and sessions |
 | `playlist-covers/` | Generated playlist covers |
 | `artist-pics/` | Cached or custom artist photos |
 
@@ -109,6 +144,12 @@ All endpoints are under `/api`. Admin endpoints need an `X-Admin-Token` header o
 | `GET /api/cover/{id}` | Embedded cover art |
 | `GET /api/artist/pic?name=` | Artist photo |
 | `GET /api/radio/stations`, `/api/radio/{id}/now` | Radio |
+| `GET /api/search?q=`, `/api/genres`, `/api/genres/{key}`, `/api/decades` | Search and categories |
+| `GET /api/charts?period=week\|month\|all` | Charts |
+| `GET /api/new` | New page |
+| `POST /api/auth/login`, `GET /api/auth/me` | Logins (accounts, admin, library password) |
+| `GET /api/me/home`, `/api/me/rewind`, `/api/me/rewind/week` | Personal mixes and Rewind |
+| `GET/POST /api/broadcast` | Live radio setup (admin) |
 | `POST /api/admin/*`, `POST /api/playlist/{name}/*` | Admin actions |
 
 ## Security notes
@@ -116,9 +157,10 @@ All endpoints are under `/api`. Admin endpoints need an `X-Admin-Token` header o
 leon.music is built for personal, trusted-network use. Before exposing it to the internet, be aware that:
 
 - **Set an admin password during setup.** If none is set, anyone who can reach the server can log in as admin.
-- The library itself (browsing and streaming) is **not password protected**. Only admin actions are.
+- The library is open to anyone who can reach it **until** you set a library password or create the first user account.
 - Admin actions that fetch URLs (playlist covers, artist photos) make requests from your machine, so do not give admin access to people you don't trust.
-- Artist photo lookup sends artist names to deezer.com. Turn it off in the admin panel if you'd rather not.
+- Artist photo lookup sends artist names to deezer.com. Turn it off in the admin panel if you'd rather not. The release-year scan sends artist and song names to deezer.com too.
+- The Icecast source password is stored in `config.json` (so stations can reconnect on their own); it is never sent back to the browser.
 
 Found a vulnerability? Please open a private security advisory on GitHub rather than a public issue.
 
@@ -126,9 +168,7 @@ Found a vulnerability? Please open a private security advisory on GitHub rather 
 
 Issues and pull requests are welcome. The project is intentionally small and dependency-light, so please keep changes focused. Ideas that would be great to have:
 
-- Hashed admin passwords and optional library login
 - Playlists you can edit (not just folder based)
-- Search across albums and artists
 - Gapless playback and queue management
 - Docker image
 
