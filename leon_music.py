@@ -113,7 +113,10 @@ def _hash_pw(pw: str) -> str:
 
 def _check_pw(pw: str, stored: str) -> bool:
     try:
-        _, salt, want = stored.split("$")
+        kind, salt, want = stored.split("$")
+        if kind == "pbkdf2":   # accounts made by pre-2.0 builds; upgraded to scrypt on their next login
+            h = hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), bytes.fromhex(salt), 200_000)
+            return secrets.compare_digest(h.hex(), want)
         h = hashlib.scrypt(pw.encode("utf-8"), salt=bytes.fromhex(salt), n=2**14, r=8, p=1, dklen=32)
         return secrets.compare_digest(h.hex(), want)
     except Exception:
@@ -2466,6 +2469,10 @@ async def api_auth_login(req: Request):
         db.close()
         if u and _check_pw(pw, u["pw_hash"]):
             _rate_ok(req)
+            if not u["pw_hash"].startswith("scrypt$"):    # upgrade old hashes now that we know the password
+                db = get_db()
+                db.execute("UPDATE users SET pw_hash=? WHERE id=?", (_hash_pw(pw), u["id"]))
+                db.commit(); db.close()
             resp = JSONResponse({"user": {"id": u["id"], "username": u["username"], "admin": False,
                                           "onboarded": bool(u["onboarded"])}})
             _new_session(u["id"], resp, req)
