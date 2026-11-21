@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>leon.music: your own music streaming service</title>
+<meta name="description" content="leon.music is a self-hosted music streaming service: search, charts, personal mixes, Rewind and your own live radio stations, all running on your own computer.">
+<meta property="og:title" content="leon.music: your music, your server, your radio">
+<meta property="og:description" content="A self-hosted music streaming service with charts, personal mixes, Rewind and live radio.">
+<meta property="og:image" content="assets/home.jpg">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='%23e5282a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="./"><i></i>leon.music</a>
+  <nav class="nav-links" id="navLinks">
+    <a href="#features">Features</a><a href="#radio">Live radio</a><a href="#rewind">Rewind</a>
+    <a href="#install">Install</a><a href="docs.html">Docs</a>
+  </nav>
+  <a class="btn sm gh" href="https://github.com/weareleon/leonmusic">GitHub</a>
+  <a class="btn sm pri" href="https://github.com/weareleon/leonmusic/releases/latest">Download</a>
+  <button class="menu-btn" aria-label="Menu" aria-expanded="false" onclick="const n=document.getElementById('navLinks');n.classList.toggle('open');this.setAttribute('aria-expanded',n.classList.contains('open'))">☰</button>
+</div></header>
+
+<main>
+<section class="hero center"><div class="wrap">
+  <a class="pill" href="https://github.com/weareleon/leonmusic/releases/latest"><b>v2.0</b>The Biggest Music Update is out →</a>
+  <h1>Your music. Your server. <em>Your radio.</em></h1>
+  <p class="lead">leon.music turns a folder of songs into your own streaming service, with search, charts, personal mixes, Rewind and live radio stations. It runs on your computer: no cloud, no subscription, no tracking.</p>
+  <div class="cta">
+    <a class="btn pri" href="#install">Get started, it's free</a>
+    <a class="btn" href="docs.html">Read the docs</a>
+  </div>
+  <div class="hero-shot">
+    <div class="window"><div class="bar"><span></span><span></span><span></span><em>localhost:7733</em></div>
+      <img class="zoomable" src="assets/home.jpg" alt="leon.music home page with Top Picks and Made for You mixes" width="1800" height="1125"></div>
+    <div class="phone"><img class="zoomable" src="assets/m-home.jpg" alt="leon.music on a phone" loading="lazy"></div>
+  </div>
+</div></section>
+
+<section id="features"><div class="wrap center">
+  <div class="eyebrow">Everything included</div>
+  <h2>A streaming service you actually own</h2>
+  <p class="lead">Point leon.music at your music folder and it builds the rest from your tags and your listening.</p>
+  <div class="grid" style="text-align:left">
+    <div class="card" style="--c1:#5e8bff;--c2:#bf5af2"><div class="ic">⌕</div><h3>Search &amp; browse</h3><p>Instant results for songs, artists and albums, plus a tile for every genre and decade on your server.</p></div>
+    <div class="card" style="--c1:#ff9f0a;--c2:#ff2d55"><div class="ic">✦</div><h3>New</h3><p>Fresh songs, trending tracks, new albums and updated playlists, all on one page.</p></div>
+    <div class="card" style="--c1:#e5282a;--c2:#ff7a1a"><div class="ic">▲</div><h3>Charts</h3><p>Weekly, monthly and all-time Top 50s, genre charts and artist charts, built from what people actually play.</p></div>
+    <div class="card" style="--c1:#ff375f;--c2:#bf5af2"><div class="ic">♥</div><h3>Made for You</h3><p>New Music, Heavy Rotation, Your Essentials, Get Up! and Chill: personal mixes that refresh every day.</p></div>
+    <div class="card" style="--c1:#ffb300;--c2:#ff3d00"><div class="ic">⟲</div><h3>Rewind</h3><p>Weekly stats, a yearly Rewind with top artists and songs, a playlist for every year, and an End of Year Rewind.</p></div>
+    <div class="card" style="--c1:#00c2a8;--c2:#0a84ff"><div class="ic">◉</div><h3>Live radio</h3><p>Run your own scheduled radio stations and broadcast them through Icecast to anyone, anywhere.</p></div>
+  </div>
+</div></section>
+
+<section style="padding-top:20px"><div class="wrap">
+  <div class="show">
+    <div class="txt">
+      <div class="eyebrow">Search</div>
+      <h2>Find anything in seconds</h2>
+      <p class="lead">Type to search your whole library, or browse categories built from your music.</p>
+      <ul>
+        <li><span><b>Genre pages</b> with feature cards, playlists, top songs, albums and artists.</span></li>
+        <li><span><b>Decades</b> from the 60s to now, using your files' release years.</span></li>
+        <li><span>Missing years? The admin panel can look them up for you.</span></li>
+      </ul>
+    </div>
+    <div class="stack glow" style="--g:#5e8bff">
+      <div class="window"><div class="bar"><span></span><span></span><span></span><em>Search</em></div><img class="zoomable" src="assets/search.jpg" alt="Search page with genre and decade categories" loading="lazy"></div>
+      <div class="window"><img class="zoomable" src="assets/genre.jpg" alt="Pop genre page" loading="lazy"></div>
+    </div>
+  </div>
+
+  <div class="show flip">
+    <div class="txt">
+      <div class="eyebrow">Charts</div>
+      <h2>Charts from your own listening</h2>
+      <p class="lead">Every song counts once someone has listened for about 30 seconds. leon.music turns those plays into charts.</p>
+      <ul>
+        <li><span><b>Top 50</b> for this week, this month and all time, with ▲▼ movement and NEW entries.</span></li>
+        <li><span>Charts for each genre and top artist, with automatically generated covers.</span></li>
+        <li><span><b>Trending</b> songs show up on the New page.</span></li>
+      </ul>
+    </div>
+    <div class="glow" style="--g:#e5282a"><div class="window"><div class="bar"><span></span><span></span><span></span><em>Charts</em></div><img class="zoomable" src="assets/charts.jpg" alt="Charts page" loading="lazy"></div></div>
+  </div>
+
+  <div class="show">
+    <div class="txt">
+      <div class="eyebrow">Made for you</div>
+      <h2>Mixes for everyone on your server</h2>
+      <p class="lead">Give friends and family their own accounts. Each person picks the genres they love and gets a home page made for them.</p>
+      <ul>
+        <li><span><b>Made for You</b> mixes that refresh daily.</span></li>
+        <li><span><b>Top Picks</b> once someone has listened for a while: their station, more from favourite artists, new releases.</span></li>
+        <li><span>Your own logo on every generated cover.</span></li>
+      </ul>
+    </div>
+    <div class="stack glow" style="--g:#bf5af2">
+      <div class="window"><div class="bar"><span></span><span></span><span></span><em>Home</em></div><img class="zoomable" src="assets/home-foryou.jpg" alt="Made for You mixes" loading="lazy"></div>
+      <div class="window"><img class="zoomable" src="assets/onboarding.jpg" alt="Genre picker for new users" loading="lazy"></div>
+    </div>
+  </div>
+</div></section>
+
+<section id="radio" style="background:linear-gradient(180deg,transparent,#120708 20%,#120708 80%,transparent)"><div class="wrap">
+  <div class="center"><div class="eyebrow">Live radio</div>
+    <h2>Start your own radio stations</h2>
+    <p class="lead">Pick stations, schedule your playlists and go live through your Icecast server, all in a two-minute setup wizard.</p></div>
+  <div class="glow" style="--g:#e5282a;margin-top:54px"><div class="window"><div class="bar"><span></span><span></span><span></span><em>Radio</em></div><img class="zoomable" src="assets/radio.jpg" alt="Radio page with live stations" loading="lazy"></div></div>
+  <div class="grid">
+    <div class="card"><h3>Ready-made or custom</h3><p>Stations like 1, Hits, Club, Chill and Holiday come with original logos, or design your own with any name, colour and style.</p></div>
+    <div class="card"><h3>Shows on a schedule</h3><p>Normal rotation plus timed shows, like a late-night mix on weekends. Every station gets a schedule page.</p></div>
+    <div class="card"><h3>Set it and forget it</h3><p>Any audio format is converted for broadcast, track titles update live, and stations reconnect on their own after restarts.</p></div>
+  </div>
+  <div class="flow" aria-label="How live radio works">
+    <div><b>1</b><span><strong>Your playlists</strong>leon.music picks the next song from the station's schedule</span></div>
+    <i aria-hidden="true">→</i>
+    <div><b>2</b><span><strong>Real-time MP3</strong>ffmpeg converts any format and leon.music streams it live</span></div>
+    <i aria-hidden="true">→</i>
+    <div><b>3</b><span><strong>Icecast</strong>your free Icecast server broadcasts it to every listener</span></div>
+    <i aria-hidden="true">→</i>
+    <div><b>4</b><span><strong>Anywhere</strong>the app, VLC, phone radio apps, smart speakers</span></div>
+  </div>
+  <p class="center" style="margin-top:18px;color:var(--fg2);font-size:14.5px">New to Icecast? The <a href="docs.html#radio" style="color:var(--accent2)">live radio guide</a> covers installing it, every setup step, and what to do when something goes wrong.</p>
+  <div class="duo" style="margin-top:16px">
+    <div class="window"><img class="zoomable" src="assets/wizard-stations.jpg" alt="Radio setup wizard: pick stations" loading="lazy"></div>
+    <div class="window"><img class="zoomable" src="assets/schedule.jpg" alt="Station schedule page" loading="lazy"></div>
+  </div>
+</div></section>
+
+<section id="rewind"><div class="wrap">
+  <div class="show flip">
+    <div class="txt">
+      <div class="eyebrow">Rewind</div>
+      <h2>See how you listen</h2>
+      <p class="lead">Every account gets its own listening stats.</p>
+      <ul>
+        <li><span><b>Weekly Rewind</b>: minutes listened, your top artists and songs, a day-by-day chart and new discoveries.</span></li>
+        <li><span><b>Rewind</b> by year and month, plus a playlist of your top songs for every year.</span></li>
+        <li><span><b>End of Year Rewind</b> lands on the home page every December.</span></li>
+      </ul>
+    </div>
+    <div class="stack glow" style="--g:#ff9f0a">
+      <div class="window"><div class="bar"><span></span><span></span><span></span><em>Weekly Rewind</em></div><img class="zoomable" src="assets/weekly-rewind.jpg" alt="Weekly Rewind" loading="lazy"></div>
+      <div class="window"><img class="zoomable" src="assets/rewind.jpg" alt="Rewind by month" loading="lazy"></div>
+    </div>
+  </div>
+</div></section>
+
+<section style="padding-top:0"><div class="wrap center">
+  <div class="eyebrow">Anywhere</div>
+  <h2>Feels at home on your phone</h2>
+  <p class="lead">Open it in any browser on any device, with a responsive layout built for touch.</p>
+  <div class="phones">
+    <div class="phone"><img class="zoomable" src="assets/m-radio.jpg" alt="Radio on a phone" loading="lazy"></div>
+    <div class="phone"><img class="zoomable" src="assets/m-home.jpg" alt="Home on a phone" loading="lazy"></div>
+    <div class="phone"><img class="zoomable" src="assets/m-rewind.jpg" alt="Weekly Rewind on a phone" loading="lazy"></div>
+  </div>
+</div></section>
+
+<section id="install"><div class="wrap">
+  <div class="center"><div class="eyebrow">Install</div><h2>Up and running in a minute</h2>
+    <p class="lead">You need Python 3.9 or newer. ffmpeg is optional and lets live radio broadcast every audio format.</p></div>
+  <div style="max-width:760px;margin:40px auto 0">
+    <div class="code"><button class="copy">Copy</button><pre><span class="c"># get leon.music</span>
+git clone https://github.com/weareleon/leonmusic
+cd leonmusic
+pip install -r requirements.txt
+<span class="c"># start it: a tray icon appears and your browser opens</span>
+python leon_music.py</pre></div>
+  </div>
+  <div class="steps">
+    <div class="card"><h3>Point it at your music</h3><p>Choose your music folder. Each top-level folder becomes a playlist.</p></div>
+    <div class="card"><h3>Set an admin password</h3><p>Then add accounts for friends and family in Settings.</p></div>
+    <div class="card"><h3>Press play</h3><p>Open <code style="color:var(--fg)">localhost:7733</code> on this computer, or put it behind HTTPS to listen anywhere.</p></div>
+  </div>
+  <p class="center" style="margin-top:30px;color:var(--fg2)">Full instructions are in the <a href="docs.html" style="color:var(--accent2)">documentation</a>.</p>
+</div></section>
+
+<section style="padding-top:0"><div class="wrap">
+  <div class="cta-box">
+    <h2>Make your music feel like a service again</h2>
+    <p>Free and open source under the MIT license. Bring your own music, keep your own data, and invite the people you like.</p>
+    <a class="btn" href="https://github.com/weareleon/leonmusic/releases/latest">Download leon.music</a>
+  </div>
+</div></section>
+</main>
+
+<footer><div class="wrap">
+  <a class="brand" href="./"><i></i>leon.music</a>
+  <span>Free and open source, MIT license. Demo images show a fictional library.</span>
+  <nav><a href="docs.html">Docs</a><a href="https://github.com/weareleon/leonmusic">GitHub</a><a href="https://github.com/weareleon/leonmusic/releases">Releases</a></nav>
+</div></footer>
+
+<div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Screenshot"><img alt=""></div>
+<script>
+// Click a screenshot to enlarge; copy buttons on code blocks
+const lb=document.getElementById('lb'),lbi=lb.querySelector('img');
+document.querySelectorAll('.zoomable').forEach(i=>i.addEventListener('click',()=>{lbi.src=i.src;lbi.alt=i.alt;lb.classList.add('on');}));
+lb.addEventListener('click',()=>lb.classList.remove('on'));
+document.addEventListener('keydown',e=>{if(e.key==='Escape')lb.classList.remove('on');});
+document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',()=>{
+  const t=b.parentElement.querySelector('pre').innerText.split('\n').filter(l=>!l.trim().startsWith('#')).join('\n');
+  navigator.clipboard.writeText(t).then(()=>{b.textContent='Copied ✓';setTimeout(()=>b.textContent='Copy',1600);});
+}));
+</script>
+</body>
+</html>

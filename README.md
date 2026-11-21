@@ -1,5 +1,7 @@
 # leon.music
 
+**🌐 Website & docs: [weareleon.github.io/leonmusic](https://weareleon.github.io/leonmusic/)**
+
 A self-hosted music player that lives in your system tray. Point it at a folder and you're streaming from your browser in seconds. No cloud, no subscriptions.
 
 - **One folder = your library.** Top-level subfolders automatically become playlists.
