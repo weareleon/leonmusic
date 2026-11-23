@@ -17,6 +17,14 @@ A self-hosted music player that lives in your system tray. Point it at a folder 
 - **Light and dark themes**, responsive layout, mobile friendly.
 - Just two files: `leon_music.py` (server and tray app) and `frontend.html` (the player UI).
 
+## What's new in 2.3
+
+- **✉️ Email support**: connect your own mail provider in the admin panel (SMTP, with a test button). Users add and confirm their address in Settings and choose what they get.
+- **Forgot password?** on the login screen emails a one-hour, single-use reset link.
+- **Digests and notifications**: Weekly Rewind digest, new music on the server, friend requests and shared playlists, new-login alerts and the End of Year Rewind. Everything is opt-in, with unsubscribe links.
+- **Admin alerts**: a radio station off air for 10 minutes, a failed library scan or a nearly full disk.
+- Adding an account with an email sends a welcome with a confirmation link.
+
 ## What's new in 2.2
 
 - **🎄 Christmas category**: a Christmas tile in Search (first in line from mid-November to early January) with everything Christmas on your server, special playlists (Christmas Classics, Cozy Christmas, Christmas Party, New Christmas Music) and your Holiday station when it's on air.

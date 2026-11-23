@@ -434,6 +434,10 @@ def scan_library():
                 if found % 20 == 0:
                     db.commit()
         db.commit()
+        state.pop("scan_error", None)
+    except Exception as e:
+        state["scan_error"] = (f"{type(e).__name__}: {e}", _now())     # emailed to admins (if email is set up)
+        raise
     finally:
         db.close()
         state["scanning"]  = False
@@ -1492,6 +1496,7 @@ async def _lifespan(_app):
     """Server start-up: bring live radio stations back on air (replaces the deprecated @on_event)."""
     threading.Thread(target=bc_sync, daemon=True).start()
     threading.Thread(target=system_fonts, daemon=True).start()     # warm the cover designer's font list
+    threading.Thread(target=_email_loop, daemon=True, name="email").start()
     yield
 
 api.router.lifespan_context = _lifespan
@@ -2471,6 +2476,7 @@ async def api_auth_login(req: Request):
             resp = JSONResponse({"user": {"id": u["id"], "username": u["username"], "admin": False,
                                           "onboarded": bool(u["onboarded"])}})
             _new_session(u["id"], resp, req)
+            email_login_alert(u["id"], req)
             return resp
     _rate_fail(req)
     await asyncio.sleep(0.4)
@@ -2494,7 +2500,7 @@ def api_users_list(req: Request):
     _require_admin(req)
     db = get_db()
     rows = [dict(r) for r in db.execute(
-        "SELECT id,username,onboarded,genres,created_at,COALESCE(is_admin,0) AS is_admin FROM users ORDER BY username").fetchall()]
+        "SELECT id,username,onboarded,genres,created_at,COALESCE(is_admin,0) AS is_admin,email,email_verified FROM users ORDER BY username").fetchall()]
     db.close()
     for r in rows:
         r["genres"] = json.loads(r["genres"] or "[]")
@@ -2509,12 +2515,15 @@ async def api_users_create(req: Request):
     if not _USERNAME_RE.match(username) or username.lower() == "admin":
         raise HTTPException(400, "Username: 2–32 letters, numbers, dots, dashes or underscores (not 'admin')")
     _valid_new_pw(pw)
+    email = _clean_email(body["email"]) if str(body.get("email") or "").strip() else None
     if not load_config().get("admin_password_hash"):
         raise HTTPException(400, "Set an admin password first, or you'd be locked out once accounts are on")
     db = get_db()
     try:
-        db.execute("INSERT INTO users(username,pw_hash) VALUES(?,?)", (username, _hash_pw(pw)))
+        uid = db.execute("INSERT INTO users(username,pw_hash,email) VALUES(?,?,?)", (username, _hash_pw(pw), email)).lastrowid
         db.commit()
+        if email and _email_ready():
+            email_welcome(uid, username, email, req)
     except sqlite3.IntegrityError:
         raise HTTPException(400, "That username is taken")
     finally:
@@ -2536,7 +2545,7 @@ async def api_users_reset(uid: int, req: Request):
 def api_users_delete(uid: int, req: Request):
     _require_admin(req)
     db = get_db()
-    for t in ("sessions", "user_mixes", "likes"):
+    for t in ("sessions", "user_mixes", "likes", "email_tokens", "email_log"):
         db.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))
     db.execute("DELETE FROM friends WHERE user_id=? OR friend_id=?", (uid, uid))
     db.execute("DELETE FROM user_playlist_tracks WHERE playlist_id IN (SELECT id FROM user_playlists WHERE user_id=?)", (uid,))
@@ -3144,7 +3153,10 @@ async def api_pl_edit(pid: int, req: Request):
     if "description" in body:
         db.execute("UPDATE user_playlists SET description=? WHERE id=?", (str(body["description"] or "")[:300], pid))
     if "shared" in body:
+        was = db.execute("SELECT shared FROM user_playlists WHERE id=?", (pid,)).fetchone()[0]
         db.execute("UPDATE user_playlists SET shared=? WHERE id=?", (1 if body["shared"] else 0, pid))
+        if body["shared"] and not was:
+            threading.Thread(target=email_playlist_shared, args=(me, pid), daemon=True).start()
     if isinstance(body.get("order"), list):          # list of entry ids in their new order
         for n, entry in enumerate(body["order"][:5000]):
             db.execute("UPDATE user_playlist_tracks SET pos=? WHERE rowid=? AND playlist_id=?", (n, int(entry), pid))
@@ -3581,8 +3593,11 @@ def api_friend_add(username: str, req: Request):
     r = db.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
     if not r or r["id"] == me["id"]:
         db.close(); raise HTTPException(404, "No one by that name")
+    had = db.execute("SELECT 1 FROM friends WHERE user_id=? AND friend_id=?", (me["id"], r["id"])).fetchone()
     db.execute("INSERT OR IGNORE INTO friends(user_id,friend_id,status,created) VALUES(?,?,?,?)", (me["id"], r["id"], "ok", _now()))
     db.commit(); rel = _relation(db, me["id"], r["id"]); db.close()
+    if not had and rel in ("outgoing", "friends"):
+        email_friend_event(me["id"], r["id"], accepted=rel == "friends")
     return {"relation": rel}
 
 @api.delete("/api/me/friends/{username}")
@@ -4385,6 +4400,28 @@ input[type=checkbox]{width:auto}
   </div>
 
   <div class="card">
+    <div class="card-title">Email</div>
+    <div style="font-size:12.5px;color:var(--fg2);line-height:1.5">Lets leon.music send password resets, weekly digests, friend notifications and server alerts.
+      Use your email provider's SMTP details: Gmail and Outlook need an <b>app password</b>; services like Brevo or Resend give you SMTP details too.</div>
+    <div class="chk"><input type="checkbox" id="emOn"><span>Send emails</span></div>
+    <label>SMTP server</label><input type="text" id="emHost" placeholder="smtp.gmail.com" autocomplete="off">
+    <div style="display:flex;gap:10px"><div style="flex:1"><label>Port</label><input type="number" id="emPort" placeholder="587"></div>
+      <div style="flex:2"><label>Security</label><select id="emSec"><option value="starttls">STARTTLS (port 587)</option><option value="ssl">SSL/TLS (port 465)</option><option value="none">None (not recommended)</option></select></div></div>
+    <label>Username</label><input type="text" id="emUser" placeholder="you@gmail.com" autocomplete="off">
+    <label>Password</label><input type="password" id="emPw" placeholder="App password" autocomplete="new-password">
+    <label>Send as (address)</label><input type="email" id="emFrom" placeholder="music@example.com">
+    <label>Sender name</label><input type="text" id="emName" placeholder="leon.music">
+    <label>Public address of this server (used in links)</label><input type="url" id="emUrl" placeholder="https://music.example.com">
+    <label>Also send server alerts to (optional)</label><input type="email" id="emAlerts" placeholder="you@example.com">
+    <div class="cv-empty" id="emInfo" style="margin:14px 0 0"></div>
+    <div class="msg" id="emMsg"></div>
+    <div class="row">
+      <button class="btn btn-primary" onclick="saveEmail()">Save</button>
+      <button class="btn btn-secondary" onclick="testEmail()">Send test email</button>
+    </div>
+  </div>
+
+  <div class="card">
     <div class="card-title">Security</div>
     <label>New admin password (min. 8 characters)</label>
     <input type="password" id="newPw" placeholder="Leave blank to keep current">
@@ -4438,6 +4475,7 @@ async function showAdmin(){
   loadForcedUI(d);
   loadStations();
   loadYearScan();
+  loadEmailUI();
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('adminMain').style.display = 'block';
   document.getElementById('logoutBtn').style.display = '';
@@ -4579,6 +4617,45 @@ async function saveTheme(){
   if(r.ok){ m.className = 'msg ok'; m.textContent = 'Saved ✓ — reload the player to see it'; }
   else { const e = await r.json().catch(() => ({})); m.className = 'msg err'; m.textContent = e.detail || 'Failed to save.'; }
   setTimeout(() => m.textContent = '', 4000);
+}
+
+// ── Email ──
+async function loadEmailUI(){
+  let d;try{d=await (await fetch('/api/admin/email',{headers:{'X-Admin-Token':_token}})).json();}catch(e){return;}
+  const v=(id,x)=>document.getElementById(id).value=x||'';
+  document.getElementById('emOn').checked=!!d.enabled;
+  v('emHost',d.host);v('emPort',d.port);document.getElementById('emSec').value=d.security||'starttls';
+  v('emUser',d.username);v('emFrom',d.from_addr);v('emName',d.from_name);v('emAlerts',d.alerts_to);
+  v('emUrl',d.public_url);document.getElementById('emUrl').placeholder=d.suggested_url||'https://music.example.com';
+  document.getElementById('emPw').placeholder=d.has_password?'Saved (leave blank to keep)':'App password';
+  document.getElementById('emInfo').textContent=(d.users_with_email?d.users_with_email+' user(s) have confirmed an email address.':'No one has added an email address yet.')
+    +(d.last_error?' Last error: '+d.last_error:'');
+  document.getElementById('emSec').onchange=e=>{const p=document.getElementById('emPort');if(e.target.value==='ssl')p.value=465;else if(e.target.value==='starttls'&&(p.value==='465'||!p.value))p.value=587;};
+}
+function emBody(){
+  const g=id=>document.getElementById(id).value.trim();
+  const b={enabled:document.getElementById('emOn').checked,host:g('emHost'),port:+g('emPort')||587,security:document.getElementById('emSec').value,
+    username:g('emUser'),from_addr:g('emFrom'),from_name:g('emName'),public_url:g('emUrl'),alerts_to:g('emAlerts')};
+  if(document.getElementById('emPw').value)b.password=document.getElementById('emPw').value;
+  return b;
+}
+async function saveEmail(quiet){
+  const m=document.getElementById('emMsg');
+  const r=await fetch('/api/admin/email',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_token},body:JSON.stringify(emBody())});
+  if(!r.ok){const e=await r.json().catch(()=>({}));m.className='msg err';m.textContent=e.detail||'Failed to save.';return false;}
+  document.getElementById('emPw').value='';
+  if(!quiet){m.className='msg ok';m.textContent='Saved ✓';setTimeout(()=>m.textContent='',3000);}
+  loadEmailUI();return true;
+}
+async function testEmail(){
+  const m=document.getElementById('emMsg');
+  const to=prompt('Send a test email to:',document.getElementById('emAlerts').value||document.getElementById('emUser').value||'');
+  if(!to)return;
+  if(!await saveEmail(true))return;
+  m.className='msg';m.textContent='Sending…';
+  const r=await fetch('/api/admin/email/test',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_token},body:JSON.stringify({to})});
+  const e=await r.json().catch(()=>({}));
+  m.className=r.ok?'msg ok':'msg err';m.textContent=r.ok?'Sent ✓ Check the inbox (and the spam folder).':(e.detail||'Could not send.');
 }
 
 // ── Artist photos ──
@@ -4846,6 +4923,693 @@ def _build_menu():
         _pystray.Menu.SEPARATOR,
         _pystray.MenuItem("Quit", _do_quit),
     )
+
+# ── Email: SMTP, verification, password reset, digests and admin alerts ──────
+import smtplib as _smtplib
+import hmac as _hmac
+import html as _html
+from email.message import EmailMessage as _EmailMessage
+from email.utils import formataddr as _formataddr, make_msgid as _make_msgid
+
+_EMAIL_RE = re.compile(r"^[^@\s<>\"',;]{1,64}@[A-Za-z0-9.\-]{1,190}\.[A-Za-z]{2,24}$")
+EMAIL_KINDS = {  # user-facing email types; all start off (password reset always works once verified)
+    "weekly":   "Weekly Rewind digest (Monday mornings)",
+    "new_music": "New music on the server (weekly, only when something was added)",
+    "friends":  "Friend requests and playlists your friends share",
+    "eoy":      "End of Year Rewind (once, in December)",
+    "login":    "A new login to your account",
+}
+ADMIN_KINDS = {"alerts": "Server alerts: radio station down, library scan failed, disk nearly full"}
+_email_status = {"last_error": "", "last_ok": 0.0}
+_alert_state: dict = {}          # radio station id -> time it went into error
+
+def init_email_db():
+    db = get_db()
+    cols = {r[1] for r in db.execute("PRAGMA table_info(users)")}
+    for col, decl in (("email", "TEXT"), ("email_verified", "INTEGER DEFAULT 0"), ("email_prefs", "TEXT DEFAULT '{}'")):
+        if col not in cols:
+            db.execute(f"ALTER TABLE users ADD COLUMN {col} {decl}")
+    db.executescript("""
+        CREATE TABLE IF NOT EXISTS email_tokens (
+            token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, kind TEXT NOT NULL, email TEXT, expires REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS email_log (
+            user_id INTEGER NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, sent REAL, PRIMARY KEY (user_id, kind, key)
+        );
+    """)
+    db.commit(); db.close()
+
+init_email_db()
+
+def _email_cfg() -> dict:
+    return load_config().get("email") or {}
+
+def _email_ready() -> bool:
+    c = _email_cfg()
+    return bool(c.get("enabled") and c.get("host") and c.get("from_addr"))
+
+def _email_secret() -> bytes:
+    c = load_config()
+    if not c.get("email_secret"):
+        c = update_config(email_secret=secrets.token_hex(32))
+    return bytes.fromhex(c["email_secret"])
+
+def _clean_email(v) -> str:
+    v = str(v or "").strip()
+    if len(v) > 254 or not _EMAIL_RE.match(v):
+        raise HTTPException(400, "That doesn't look like an email address")
+    return v
+
+def _link_base(req: Optional[Request] = None) -> str:
+    base = (_email_cfg().get("public_url") or "").strip().rstrip("/")
+    if base:
+        return base
+    if req is not None:
+        return str(req.base_url).rstrip("/")
+    return f"http://{socket.gethostname()}:{PORT}"
+
+def _hash_tok(t: str) -> str:
+    return hashlib.sha256(t.encode()).hexdigest()
+
+def _new_email_token(db, uid: int, kind: str, email: str, ttl: float) -> str:
+    db.execute("DELETE FROM email_tokens WHERE expires<? OR (user_id=? AND kind=?)", (_now(), uid, kind))
+    t = secrets.token_urlsafe(32)
+    db.execute("INSERT INTO email_tokens(token_hash,user_id,kind,email,expires) VALUES(?,?,?,?,?)",
+               (_hash_tok(t), uid, kind, email, _now() + ttl))
+    db.commit()
+    return t
+
+def _take_email_token(db, t: str, kind: str):
+    r = db.execute("SELECT * FROM email_tokens WHERE token_hash=? AND kind=? AND expires>?",
+                   (_hash_tok(str(t or "")), kind, _now())).fetchone()
+    if r:
+        db.execute("DELETE FROM email_tokens WHERE token_hash=?", (r["token_hash"],)); db.commit()
+    return r
+
+def _unsub_sig(uid: int, kind: str) -> str:
+    return _hmac.new(_email_secret(), f"{uid}:{kind}".encode(), hashlib.sha256).hexdigest()[:32]
+
+def _unsub_link(uid: int, kind: str, base: str) -> str:
+    return f"{base}/api/email/unsubscribe?u={uid}&k={quote(kind)}&s={_unsub_sig(uid, kind)}"
+
+def _thumb(cover_id) -> Optional[bytes]:
+    """Small JPEG of an album cover, embedded in the email (the cover URLs need a login)."""
+    if not cover_id:
+        return None
+    db = get_db()
+    r = db.execute("SELECT data FROM covers WHERE id=?", (cover_id,)).fetchone()
+    db.close()
+    if not r:
+        return None
+    try:
+        im = Image.open(io.BytesIO(r["data"])).convert("RGB")
+        im.thumbnail((160, 160))
+        b = io.BytesIO(); im.save(b, "JPEG", quality=82)
+        return b.getvalue()
+    except Exception:
+        return None
+
+def _esc(v) -> str:
+    return _html.escape(str(v if v is not None else ""))
+
+def _email_html(title: str, body: str, base: str, button=None, footer: str = "", images=None) -> str:
+    acc = state.get("accent") or "#e5282a"
+    btn = ""
+    if button:
+        btn = (f'<p style="margin:26px 0 6px"><a href="{_esc(button[1])}" style="background:{acc};color:#fff;text-decoration:none;'
+               f'font-weight:700;padding:12px 22px;border-radius:999px;display:inline-block">{_esc(button[0])}</a></p>')
+    return f"""<!doctype html><html><body style="margin:0;background:#0f0f12;padding:24px 12px;font-family:Montserrat,Segoe UI,Helvetica,Arial,sans-serif">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center">
+<table role="presentation" width="100%" style="max-width:560px;background:#18181d;border-radius:18px;overflow:hidden" cellspacing="0" cellpadding="0">
+<tr><td style="height:6px;background:{acc}"></td></tr>
+<tr><td style="padding:26px 28px 8px;color:{acc};font-weight:800;font-size:15px;letter-spacing:.3px">{_esc(state.get("name") or "leon.music")}</td></tr>
+<tr><td style="padding:0 28px;color:#fff;font-weight:800;font-size:24px;line-height:1.25">{_esc(title)}</td></tr>
+<tr><td style="padding:14px 28px 26px;color:#c9c9d1;font-size:15px;line-height:1.55">{body}{btn}</td></tr>
+<tr><td style="padding:16px 28px 22px;border-top:1px solid #2a2a31;color:#7d7d88;font-size:12px;line-height:1.5">{footer}
+Open <a href="{_esc(base)}" style="color:#9d9da8">{_esc(base)}</a></td></tr>
+</table></td></tr></table></body></html>"""
+
+def send_email(to: str, subject: str, html_body: str, text: str, images=None, unsub: str = "") -> bool:
+    """Send one email over the admin's SMTP server. images = [(cid, jpeg bytes)]. Raises on failure."""
+    c = _email_cfg()
+    if not (c.get("host") and c.get("from_addr")):
+        raise RuntimeError("Email isn't set up")
+    msg = _EmailMessage()
+    msg["Subject"] = re.sub(r"[\r\n]+", " ", subject)[:200]
+    msg["From"] = _formataddr((c.get("from_name") or state.get("name") or "leon.music", c["from_addr"]))
+    msg["To"] = to
+    msg["Message-ID"] = _make_msgid(domain=c["from_addr"].split("@")[-1])
+    if unsub:
+        msg["List-Unsubscribe"] = f"<{unsub}>"
+        msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+    msg.set_content(text)
+    msg.add_alternative(html_body, subtype="html")
+    if images:
+        part = msg.get_payload()[1]
+        for cid, data in images:
+            part.add_related(data, "image", "jpeg", cid=f"<{cid}>")
+    port = int(c.get("port") or 587)
+    sec = c.get("security") or ("ssl" if port == 465 else "starttls")
+    ctx = ssl.create_default_context()
+    try:
+        if sec == "ssl":
+            s = _smtplib.SMTP_SSL(c["host"], port, timeout=20, context=ctx)
+        else:
+            s = _smtplib.SMTP(c["host"], port, timeout=20)
+        with s:
+            s.ehlo()
+            if sec == "starttls":
+                s.starttls(context=ctx); s.ehlo()
+            if c.get("username"):
+                s.login(c["username"], c.get("password") or "")
+            s.send_message(msg)
+    except Exception as e:
+        _email_status["last_error"] = f"{type(e).__name__}: {e}"[:300]
+        raise
+    _email_status.update(last_error="", last_ok=_now())
+    return True
+
+def _send_bg(*a, **kw):
+    """Fire-and-forget from request handlers (keeps response times the same whether an email went out or not)."""
+    def go():
+        try:
+            send_email(*a, **kw)
+        except Exception as e:
+            print(f"[email] couldn't send: {e}", file=sys.stderr)
+    threading.Thread(target=go, daemon=True).start()
+
+def _user_email(db, uid: int, kind: Optional[str] = None):
+    """(email, display name, prefs) if this user has a verified address and (optionally) wants this kind."""
+    r = db.execute("SELECT username,display_name,email,email_verified,email_prefs FROM users WHERE id=?", (uid,)).fetchone()
+    if not r or not r["email"] or not r["email_verified"]:
+        return None
+    prefs = json.loads(r["email_prefs"] or "{}")
+    if kind and not prefs.get(kind, kind == "alerts"):
+        return None
+    return r["email"], (r["display_name"] or r["username"]), prefs
+
+def _logged(db, uid: int, kind: str, key: str) -> bool:
+    return bool(db.execute("SELECT 1 FROM email_log WHERE user_id=? AND kind=? AND key=?", (uid, kind, key)).fetchone())
+
+def _mark_sent(db, uid: int, kind: str, key: str):
+    db.execute("INSERT OR IGNORE INTO email_log(user_id,kind,key,sent) VALUES(?,?,?,?)", (uid, kind, key, _now()))
+    db.commit()
+
+def _footer(uid: int, kind: str, base: str) -> str:
+    return (f'You get this because you turned on “{_esc(EMAIL_KINDS.get(kind) or ADMIN_KINDS.get(kind, kind))}”. '
+            f'<a href="{_esc(_unsub_link(uid, kind, base))}" style="color:#9d9da8">Unsubscribe</a> · ')
+
+def notify(uid: int, kind: str, subject: str, title: str, body_html: str, text: str, button=None, images=None, key: str = ""):
+    """Send a preference-gated email to one user in the background (deduplicated by key when given)."""
+    if not _email_ready():
+        return
+    db = get_db()
+    try:
+        hit = _user_email(db, uid, kind)
+        if not hit or (key and _logged(db, uid, kind, key)):
+            return
+        base = _link_base()
+        if button and button[1].startswith("/"):
+            button = (button[0], base + button[1])
+        html_ = _email_html(title, body_html, base, button, _footer(uid, kind, base))
+        unsub = _unsub_link(uid, kind, base)
+        if key:
+            _mark_sent(db, uid, kind, key)
+    finally:
+        db.close()
+    _send_bg(hit[0], subject, html_, f"{text}\n\n{base}\nUnsubscribe: {unsub}", images, unsub)
+
+# ── Settings: the user's own email address ──
+@api.get("/api/me/email")
+def api_my_email(req: Request):
+    u = _require_user(req)
+    db = get_db()
+    r = db.execute("SELECT email,email_verified,email_prefs,COALESCE(is_admin,0) AS a FROM users WHERE id=?", (u["id"],)).fetchone()
+    db.close()
+    kinds = dict(EMAIL_KINDS, **(ADMIN_KINDS if r["a"] else {}))
+    prefs = json.loads(r["email_prefs"] or "{}")
+    return {"available": _email_ready(), "email": r["email"] or "", "verified": bool(r["email_verified"]),
+            "kinds": [{"key": k, "label": v, "on": bool(prefs.get(k, k == "alerts"))} for k, v in kinds.items()]}
+
+def _send_verify(req: Request, uid: int, email: str):
+    db = get_db()
+    t = _new_email_token(db, uid, "verify", email, 48 * 3600)
+    db.close()
+    base = _link_base(req)
+    link = f"{base}/api/email/verify?t={t}"
+    html_ = _email_html("Confirm your email", "Press the button to confirm this is your email address. "
+                        "The link works for 48 hours.<br><br>If you didn't add this address, you can ignore this email.",
+                        base, ("Confirm email", link))
+    _send_bg(email, f"Confirm your email for {state.get('name') or 'leon.music'}", html_,
+             f"Confirm your email address: {link}\n\nIf you didn't add this address, ignore this email.")
+
+@api.post("/api/me/email")
+async def api_set_email(req: Request):
+    """Add or change your address (needs your password, so a borrowed session can't redirect password resets)."""
+    u = _require_user(req)
+    if not _email_ready():
+        raise HTTPException(400, "The admin hasn't set up email on this server yet")
+    _rate_check(req)
+    body = await req.json()
+    email = _clean_email(body.get("email"))
+    db = get_db()
+    r = db.execute("SELECT pw_hash FROM users WHERE id=?", (u["id"],)).fetchone()
+    if not _check_pw(str(body.get("password") or ""), r["pw_hash"]):
+        db.close(); _rate_fail(req)
+        raise HTTPException(401, "Wrong password")
+    _rate_ok(req)
+    db.execute("UPDATE users SET email=?, email_verified=0 WHERE id=?", (email, u["id"]))
+    db.commit(); db.close()
+    _send_verify(req, u["id"], email)
+    return {"status": "sent"}
+
+@api.post("/api/me/email/resend")
+def api_resend_verify(req: Request):
+    u = _require_user(req)
+    db = get_db()
+    r = db.execute("SELECT email,email_verified FROM users WHERE id=?", (u["id"],)).fetchone()
+    recent = db.execute("SELECT expires FROM email_tokens WHERE user_id=? AND kind='verify'", (u["id"],)).fetchone()
+    db.close()
+    if not r["email"] or r["email_verified"]:
+        raise HTTPException(400, "Nothing to confirm")
+    if recent and recent["expires"] - 48 * 3600 > _now() - 60:
+        raise HTTPException(429, "Wait a minute before sending another one")
+    _send_verify(req, u["id"], r["email"])
+    return {"status": "sent"}
+
+@api.delete("/api/me/email")
+def api_remove_email(req: Request):
+    u = _require_user(req)
+    db = get_db()
+    db.execute("UPDATE users SET email=NULL, email_verified=0 WHERE id=?", (u["id"],))
+    db.execute("DELETE FROM email_tokens WHERE user_id=?", (u["id"],))
+    db.commit(); db.close()
+    return {"status": "ok"}
+
+@api.patch("/api/me/email/prefs")
+async def api_email_prefs(req: Request):
+    u = _require_user(req)
+    body = await req.json()
+    db = get_db()
+    r = db.execute("SELECT email_prefs,COALESCE(is_admin,0) AS a FROM users WHERE id=?", (u["id"],)).fetchone()
+    prefs = json.loads(r["email_prefs"] or "{}")
+    allowed = set(EMAIL_KINDS) | (set(ADMIN_KINDS) if r["a"] else set())
+    for k, v in (body or {}).items():
+        if k in allowed:
+            prefs[k] = bool(v)
+    db.execute("UPDATE users SET email_prefs=? WHERE id=?", (json.dumps(prefs), u["id"]))
+    db.commit(); db.close()
+    return {"status": "ok"}
+
+def _done_page(title: str, msg: str) -> HTMLResponse:
+    acc = state.get("accent") or "#e5282a"
+    return HTMLResponse(f"""<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>{_esc(title)}</title>
+<body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0f0f12;color:#fff;font-family:Montserrat,Segoe UI,sans-serif">
+<div style="max-width:420px;padding:24px;text-align:center"><div style="color:{acc};font-weight:800">{_esc(state.get('name') or 'leon.music')}</div>
+<h1 style="font-size:24px">{_esc(title)}</h1><p style="color:#c9c9d1;line-height:1.5">{_esc(msg)}</p>
+<p><a href="/" style="color:#fff;background:{acc};padding:10px 20px;border-radius:999px;text-decoration:none;font-weight:700">Open {_esc(state.get('name') or 'leon.music')}</a></p></div>""")
+
+@api.get("/api/email/verify")
+def api_email_verify(t: str = ""):
+    db = get_db()
+    r = _take_email_token(db, t, "verify")
+    ok = False
+    if r:
+        cur = db.execute("SELECT email FROM users WHERE id=?", (r["user_id"],)).fetchone()
+        if cur and cur["email"] == r["email"]:          # still the address they asked to confirm
+            db.execute("UPDATE users SET email_verified=1 WHERE id=?", (r["user_id"],)); db.commit(); ok = True
+    db.close()
+    if ok:
+        return _done_page("Email confirmed", "You can now reset your password by email, and choose which emails you want in Settings.")
+    return _done_page("Link expired", "This link was already used or has expired. Send a new one from Settings.")
+
+def _unsub_ok(u: int, k: str, s: str) -> bool:
+    return (k in EMAIL_KINDS or k in ADMIN_KINDS) and _hmac.compare_digest(str(s), _unsub_sig(u, k))
+
+@api.get("/api/email/unsubscribe")
+def api_email_unsub_page(u: int = 0, k: str = "", s: str = ""):
+    """A confirm button rather than unsubscribing on GET, so mail scanners that open links don't unsubscribe people."""
+    if not _unsub_ok(u, k, s):
+        return _done_page("Link not valid", "Change which emails you get in Settings instead.")
+    acc = state.get("accent") or "#e5282a"
+    page = _done_page("Unsubscribe?", f"Stop getting “{EMAIL_KINDS.get(k) or ADMIN_KINDS.get(k)}” emails?")
+    form = (f'<form method="post" action="/api/email/unsubscribe?u={u}&k={quote(k)}&s={_esc(s)}">'
+            f'<button style="font:700 15px Montserrat,sans-serif;color:#fff;background:{acc};border:0;padding:11px 22px;border-radius:999px;cursor:pointer">Unsubscribe</button></form>')
+    return HTMLResponse(page.body.decode().replace('<p><a href="/"', form + '<p><a href="/"', 1))
+
+@api.post("/api/email/unsubscribe")
+def api_email_unsub(u: int = 0, k: str = "", s: str = ""):
+    if not _unsub_ok(u, k, s):
+        return _done_page("Link not valid", "Change which emails you get in Settings instead.")
+    db = get_db()
+    r = db.execute("SELECT email_prefs FROM users WHERE id=?", (u,)).fetchone()
+    if r:
+        prefs = json.loads(r["email_prefs"] or "{}"); prefs[k] = False
+        db.execute("UPDATE users SET email_prefs=? WHERE id=?", (json.dumps(prefs), u)); db.commit()
+    db.close()
+    return _done_page("Unsubscribed", f"You won't get “{EMAIL_KINDS.get(k) or ADMIN_KINDS.get(k)}” emails any more.")
+
+# ── Forgot password ──
+_forgot_hits: dict = {}
+
+@api.post("/api/auth/forgot")
+async def api_auth_forgot(req: Request):
+    """Always answers the same way, so it can't be used to find out which accounts or addresses exist."""
+    ip = req.client.host if req.client else "?"
+    hits = [t for t in _forgot_hits.get(ip, []) if _now() - t < 900]
+    if len(hits) >= 5:
+        raise HTTPException(429, "Too many requests. Try again in a few minutes.")
+    _forgot_hits[ip] = hits + [_now()]
+    who = str((await req.json()).get("user") or "").strip()[:254]
+    if who and _email_ready():
+        db = get_db()
+        u = db.execute("""SELECT id,username,email FROM users WHERE email_verified=1 AND email IS NOT NULL
+                          AND (username=? OR lower(email)=lower(?))""", (who, who)).fetchone()
+        recent = u and db.execute("SELECT expires FROM email_tokens WHERE user_id=? AND kind='reset'", (u["id"],)).fetchone()
+        if u and not (recent and recent["expires"] - 3600 > _now() - 120):     # max one email per 2 minutes
+            t = _new_email_token(db, u["id"], "reset", u["email"], 3600)
+            base = _link_base(req)
+            link = f"{base}/?reset={t}"
+            html_ = _email_html("Reset your password",
+                                f"Someone (hopefully you) asked to reset the password for <b>{_esc(u['username'])}</b>. "
+                                "The link works for one hour and only once.<br><br>If it wasn't you, ignore this email; "
+                                "your password stays the same.", base, ("Choose a new password", link))
+            _send_bg(u["email"], f"Reset your {state.get('name') or 'leon.music'} password", html_,
+                     f"Reset the password for {u['username']}: {link}\n\nThe link works for one hour. If it wasn't you, ignore this email.")
+        db.close()
+    return {"status": "ok", "email": _email_ready()}
+
+@api.post("/api/auth/reset")
+async def api_auth_reset(req: Request):
+    _rate_check(req)
+    body = await req.json()
+    pw = _valid_new_pw(body.get("password"))
+    db = get_db()
+    r = _take_email_token(db, body.get("token"), "reset")
+    if not r:
+        db.close(); _rate_fail(req)
+        raise HTTPException(400, "This reset link was already used or has expired. Ask for a new one.")
+    db.execute("UPDATE users SET pw_hash=? WHERE id=?", (_hash_pw(pw), r["user_id"]))
+    db.execute("DELETE FROM sessions WHERE user_id=?", (r["user_id"],))       # sign out everywhere
+    db.commit()
+    name = db.execute("SELECT username FROM users WHERE id=?", (r["user_id"],)).fetchone()
+    db.close()
+    _rate_ok(req)
+    return {"status": "ok", "username": name["username"] if name else ""}
+
+_OPEN_PATHS.update({"/api/email/verify", "/api/email/unsubscribe", "/api/auth/forgot", "/api/auth/reset"})
+
+# ── Admin: SMTP settings ──
+_SMTP_KEYS = ("enabled", "host", "port", "security", "username", "from_name", "from_addr", "public_url", "alerts_to")
+
+@api.get("/api/admin/email")
+def api_admin_email(req: Request):
+    _require_admin(req)
+    c = _email_cfg()
+    out = {k: c.get(k, "") for k in _SMTP_KEYS}
+    out.update(enabled=bool(c.get("enabled")), port=int(c.get("port") or 587), security=c.get("security") or "starttls",
+               has_password=bool(c.get("password")), last_error=_email_status["last_error"],
+               suggested_url=_link_base(req))
+    db = get_db()
+    out["users_with_email"] = db.execute("SELECT COUNT(*) FROM users WHERE email_verified=1").fetchone()[0]
+    db.close()
+    return out
+
+@api.post("/api/admin/email")
+async def api_admin_email_set(req: Request):
+    _require_admin(req)
+    body = await req.json()
+    c = dict(_email_cfg())
+    for k in ("host", "username", "from_name"):
+        if k in body:
+            c[k] = re.sub(r"[\r\n]", "", str(body[k] or "")).strip()[:200]
+    if "from_addr" in body:
+        c["from_addr"] = _clean_email(body["from_addr"]) if str(body["from_addr"] or "").strip() else ""
+    if "alerts_to" in body:
+        c["alerts_to"] = _clean_email(body["alerts_to"]) if str(body["alerts_to"] or "").strip() else ""
+    if "public_url" in body:
+        v = _clean_url(body["public_url"])
+        if v is None:
+            raise HTTPException(400, "The public address must start with http:// or https://")
+        c["public_url"] = v.rstrip("/")
+    if "port" in body:
+        try:
+            p = int(body["port"])
+            assert 0 < p < 65536
+        except Exception:
+            raise HTTPException(400, "Port must be a number like 587")
+        c["port"] = p
+    if "security" in body:
+        if body["security"] not in ("starttls", "ssl", "none"):
+            raise HTTPException(400, "Security must be starttls, ssl or none")
+        c["security"] = body["security"]
+    if body.get("password"):                       # blank = keep the saved one
+        c["password"] = str(body["password"])
+    if body.get("clear_password"):
+        c.pop("password", None)
+    if "enabled" in body:
+        c["enabled"] = bool(body["enabled"])
+    update_config(email=c)
+    return {"status": "ok"}
+
+@api.post("/api/admin/email/test")
+async def api_admin_email_test(req: Request):
+    _require_admin(req)
+    to = _clean_email((await req.json()).get("to"))
+    base = _link_base(req)
+    html_ = _email_html("Email works!", "This is a test email from your leon.music server. "
+                        "Password resets, digests and alerts will arrive just like this.", base, ("Open leon.music", base))
+    try:
+        await run_in_threadpool(send_email, to, f"Test email from {state.get('name') or 'leon.music'}", html_,
+                                "This is a test email from your leon.music server.")
+    except Exception as e:
+        raise HTTPException(400, f"Couldn't send: {type(e).__name__}: {e}"[:300])
+    return {"status": "sent"}
+
+# ── Events that send email ──
+def email_friend_event(from_uid: int, to_uid: int, accepted: bool):
+    db = get_db()
+    r = db.execute("SELECT username,display_name FROM users WHERE id=?", (from_uid,)).fetchone()
+    db.close()
+    if not r:
+        return
+    name = r["display_name"] or r["username"]
+    if accepted:
+        notify(to_uid, "friends", f"{name} accepted your friend request", f"You and {name} are now friends",
+               f"<b>{_esc(name)}</b> accepted your friend request. Their listening shows up in your Friends Mix.",
+               f"{name} accepted your friend request.", ("See your friends", "/?view=friends"))
+    else:
+        notify(to_uid, "friends", f"{name} wants to be friends", f"{name} sent you a friend request",
+               f"<b>{_esc(name)}</b> (@{_esc(r['username'])}) wants to be your friend on {_esc(state.get('name'))}.",
+               f"{name} (@{r['username']}) sent you a friend request.", ("Answer the request", "/?view=friends"),
+               key=f"req:{from_uid}:{int(_now() // 86400)}")
+
+def email_playlist_shared(owner: int, pid: int):
+    db = get_db()
+    o = db.execute("SELECT username,display_name FROM users WHERE id=?", (owner,)).fetchone()
+    p = db.execute("SELECT name FROM user_playlists WHERE id=?", (pid,)).fetchone()
+    n = db.execute("SELECT COUNT(*) FROM user_playlist_tracks WHERE playlist_id=?", (pid,)).fetchone()[0]
+    cov = db.execute("""SELECT t.cover_id FROM user_playlist_tracks x JOIN tracks t ON t.id=x.track_id
+                        WHERE x.playlist_id=? AND t.cover_id IS NOT NULL ORDER BY x.pos LIMIT 1""", (pid,)).fetchone()
+    friends = _friend_ids(db, owner)
+    db.close()
+    if not (o and p):
+        return
+    name = o["display_name"] or o["username"]
+    th = _thumb(cov[0]) if cov else None
+    img = f'<img src="cid:plc" width="120" height="120" style="border-radius:10px;display:block;margin:0 0 14px" alt="">' if th else ""
+    for f in friends:
+        notify(f, "friends", f"{name} shared a playlist: {p['name']}", f"{name} shared “{p['name']}”",
+               f"{img}<b>{_esc(name)}</b> shared a playlist with everyone on {_esc(state.get('name'))}: "
+               f"<b>{_esc(p['name'])}</b> ({n} songs).", f"{name} shared the playlist {p['name']} ({n} songs).",
+               ("Listen now", f"/?playlist=u{pid}"), [("plc", th)] if th else None, key=f"pl:{pid}")
+
+def email_login_alert(uid: int, req: Request):
+    ua = re.sub(r"[\r\n]", "", req.headers.get("user-agent", "an unknown device"))[:120]
+    ip = req.headers.get("x-forwarded-for", "").split(",")[0].strip() or (req.client.host if req.client else "?")
+    when = _dt.datetime.now().strftime("%d %b %Y, %H:%M")
+    notify(uid, "login", "New login to your account", "New login to your account",
+           f"Someone just logged in to your account.<br><br><b>When:</b> {_esc(when)}<br><b>From:</b> {_esc(ip)}<br>"
+           f"<b>Device:</b> {_esc(ua)}<br><br>If this wasn't you, change your password now.",
+           f"New login at {when} from {ip} ({ua}). If this wasn't you, change your password.")
+
+def email_welcome(uid: int, username: str, email: str, req: Request):
+    """Admin added an account with an email: say hello and let them confirm the address in one go."""
+    db = get_db()
+    t = _new_email_token(db, uid, "verify", email, 7 * 86400)
+    db.close()
+    base = _link_base(req)
+    html_ = _email_html(f"Welcome to {state.get('name') or 'leon.music'}!",
+                        f"An account was made for you. Your username is <b>{_esc(username)}</b>; "
+                        "ask the person who set up the server for your password.<br><br>"
+                        "Press the button to confirm your email; then you can reset your password yourself if you ever forget it.",
+                        base, ("Confirm email", f"{base}/api/email/verify?t={t}"))
+    _send_bg(email, f"Your {state.get('name') or 'leon.music'} account", html_,
+             f"An account was made for you on {base}. Username: {username}.\nConfirm your email: {base}/api/email/verify?t={t}")
+
+def email_admins(key: str, subject: str, title: str, body_html: str, text: str):
+    """Server alerts: every admin account that wants them, plus the 'alerts to' address. Once per key."""
+    if not _email_ready():
+        return
+    db = get_db()
+    if _logged(db, 0, "alerts", key):
+        db.close(); return
+    _mark_sent(db, 0, "alerts", key)
+    ids = [r[0] for r in db.execute("SELECT id FROM users WHERE is_admin=1")]
+    db.close()
+    for uid in ids:
+        notify(uid, "alerts", subject, title, body_html, text, ("Open the admin panel", "/admin"))
+    extra = _email_cfg().get("alerts_to")
+    if extra:
+        base = _link_base()
+        _send_bg(extra, subject, _email_html(title, body_html, base, ("Open the admin panel", base + "/admin"),
+                 "Sent to the alerts address in Admin → Email. "), f"{text}\n\n{base}")
+
+# ── Scheduled emails (checked every 10 minutes) ──
+def _album_tiles(rows, n=6):
+    imgs, cells = [], []
+    for i, r in enumerate(rows[:n]):
+        th = _thumb(r["cover_id"])
+        if th:
+            imgs.append((f"c{i}", th))
+        img = (f'<img src="cid:c{i}" width="80" height="80" style="border-radius:8px;display:block" alt="">' if th else
+               '<div style="width:80px;height:80px;border-radius:8px;background:#2a2a31"></div>')
+        cells.append(f'<td style="padding:0 8px 10px 0;vertical-align:top;width:80px">{img}'
+                     f'<div style="font-size:11px;color:#fff;font-weight:700;margin-top:5px;width:80px;overflow:hidden">{_esc(r["album"])}</div>'
+                     f'<div style="font-size:11px;color:#8d8d98;width:80px;overflow:hidden">{_esc(r["artist"])}</div></td>')
+    rows_html = "".join(f"<tr>{''.join(cells[i:i + 3])}</tr>" for i in range(0, len(cells), 3))
+    return f'<table role="presentation" cellspacing="0" cellpadding="0" style="margin-top:14px">{rows_html}</table>', imgs
+
+def _weekly_digest(uid: int, w0: float, label: str):
+    db = get_db()
+    rows = _user_plays(db, uid, w0, w0 + 7 * 86400)
+    prev = _user_plays(db, uid, w0 - 7 * 86400, w0)
+    db.close()
+    if not rows:
+        return
+    st, pv = _rewind_stats(rows, 5), _rewind_stats(prev, 1)
+    diff = st["minutes"] - pv["minutes"]
+    trend = (f"{abs(diff)} minutes {'more' if diff >= 0 else 'less'} than the week before" if pv["minutes"] else "your first week with Rewind")
+    arts = "".join(f"<li>{_esc(a['name'])} <span style='color:#8d8d98'>· {a['minutes']} min</span></li>" for a in st["top_artists"][:5])
+    songs = "".join(f"<li>{_esc(s['title'])} <span style='color:#8d8d98'>· {_esc(s['artist'])}</span></li>" for s in st["top_songs"][:5])
+    top = st["top_songs"][0] if st["top_songs"] else None
+    th = _thumb(top["cover_id"]) if top else None
+    img = '<img src="cid:top" width="110" height="110" style="border-radius:10px;display:block;margin:4px 0 14px" alt="">' if th else ""
+    body = (f'{img}<div style="font-size:40px;font-weight:800;color:#fff;line-height:1">{st["minutes"]:,}</div>'
+            f'<div style="margin-bottom:14px">minutes last week, {trend}. {st["plays"]} plays across {st["days"]} days.</div>'
+            f'<b style="color:#fff">Top artists</b><ol style="margin:6px 0 14px;padding-left:20px">{arts}</ol>'
+            f'<b style="color:#fff">Top songs</b><ol style="margin:6px 0 0;padding-left:20px">{songs}</ol>')
+    text = (f"{st['minutes']} minutes last week ({trend}).\nTop artists: " + ", ".join(a["name"] for a in st["top_artists"][:5])
+            + "\nTop songs: " + ", ".join(s["title"] for s in st["top_songs"][:5]))
+    notify(uid, "weekly", f"Your Weekly Rewind: {st['minutes']:,} minutes", f"Your week in music · {label}", body, text,
+           ("See your Weekly Rewind", "/?view=weekly-rewind"), [("top", th)] if th else None, key=label)
+
+def _new_music_digest(uids: list, key: str):
+    db = get_db()
+    total = db.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
+    since = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=7)
+    rows = db.execute("""SELECT album, COALESCE(album_artist,artist) AS artist, MIN(cover_id) AS cover_id, COUNT(*) AS n
+                         FROM tracks WHERE added_at>=? AND album IS NOT NULL AND album<>''
+                         GROUP BY album, COALESCE(album_artist,artist) ORDER BY MAX(added_at) DESC""",
+                      (since.strftime("%Y-%m-%d %H:%M:%S"),)).fetchall()
+    n_songs = db.execute("SELECT COUNT(*) FROM tracks WHERE added_at>=?", (since.strftime("%Y-%m-%d %H:%M:%S"),)).fetchone()[0]
+    db.close()
+    if not n_songs or n_songs >= total:            # nothing new, or the very first scan (everything is "new")
+        return
+    tiles, imgs = _album_tiles(rows)
+    what = f"{len(rows)} new album{'s' if len(rows) != 1 else ''}" if rows else f"{n_songs} new songs"
+    body = f"{n_songs} songs were added to {_esc(state.get('name'))} this week, including {what}:{tiles}"
+    text = f"{n_songs} songs were added this week:\n" + "\n".join(f"- {r['album']} · {r['artist']}" for r in rows[:10])
+    for uid in uids:
+        notify(uid, "new_music", f"New on {state.get('name')}: {what}", f"New this week: {what}", body, text,
+               ("Open New", "/?view=new"), imgs, key=key)
+
+def _eoy_mail(uid: int, year: int):
+    db = get_db()
+    rows = _user_plays(db, uid, _dt.datetime(year, 1, 1).timestamp(), _dt.datetime(year + 1, 1, 1).timestamp())
+    db.close()
+    if len(rows) < 20:
+        return
+    st = _rewind_stats(rows, 5)
+    a = st["top_artists"][0]["name"] if st["top_artists"] else "?"
+    s = st["top_songs"][0] if st["top_songs"] else None
+    th = _thumb(s["cover_id"]) if s else None
+    img = '<img src="cid:eoy" width="140" height="140" style="border-radius:12px;display:block;margin:4px 0 14px" alt="">' if th else ""
+    body = (f'{img}You listened for <b style="color:#fff">{st["minutes"]:,} minutes</b> this year. '
+            f'Your top artist was <b style="color:#fff">{_esc(a)}</b>'
+            + (f' and your song of the year was <b style="color:#fff">{_esc(s["title"])}</b>.' if s else '.')
+            + " Your Rewind playlist with your 50 most-played songs is waiting.")
+    notify(uid, "eoy", f"Your {year} Rewind is here", f"Your {year} in music", body,
+           f"Your {year} Rewind: {st['minutes']} minutes, top artist {a}.", ("Open your Rewind", "/?view=rewind"),
+           [("eoy", th)] if th else None, key=str(year))
+
+def _check_alerts():
+    now = _now()
+    for sid, s in list(_bc_status.items()):
+        if s.get("state") == "error":
+            since = _alert_state.setdefault(sid, now)
+            if now - since > 10 * 60:
+                st = _bc_station(sid) or {}
+                name = st.get("name") or sid
+                email_admins(f"radio:{sid}:{int(since)}", f"Radio station {name} is off air",
+                             f"{name} has been off air for 10 minutes",
+                             f"leon.music keeps trying to reconnect, but <b>{_esc(name)}</b> still can't stream.<br><br>"
+                             f"<b>Last error:</b> {_esc(s.get('message'))}", f"{name} is off air: {s.get('message')}")
+        else:
+            _alert_state.pop(sid, None)
+    if state.get("scan_error"):
+        err, t = state["scan_error"]
+        email_admins(f"scan:{int(t)}", "Library scan failed", "The library scan failed",
+                     f"leon.music couldn't finish scanning your music folder.<br><br><b>Error:</b> {_esc(err)}",
+                     f"The library scan failed: {err}")
+    import shutil as _sh
+    for label, p in (("music folder", state.get("music_dir")), ("data folder", CONFIG_PATH.parent)):
+        try:
+            du = _sh.disk_usage(str(p))
+        except Exception:
+            continue
+        if du.free < 2 * 1024 ** 3 or du.free / du.total < 0.03:
+            email_admins(f"disk:{label}:{_dt.date.today().isocalendar()[1]}", "Disk nearly full", f"The disk with your {label} is nearly full",
+                         f"Only <b>{du.free / 1024 ** 3:.1f} GB</b> is free on the disk holding your {label} ({_esc(p)}). "
+                         "Scans, covers and the database need some room to work.",
+                         f"Only {du.free / 1024 ** 3:.1f} GB free on the disk with your {label}.")
+
+def _email_tick():
+    if not _email_ready():
+        return
+    _check_alerts()
+    today = _dt.date.today()
+    hour = _dt.datetime.now().hour
+    if hour < 8:
+        return
+    db = get_db()
+    users = db.execute("SELECT id,email_prefs FROM users WHERE email_verified=1 AND email IS NOT NULL").fetchall()
+    db.close()
+    monday = today - _dt.timedelta(days=today.weekday())
+    last_mon = monday - _dt.timedelta(days=7)
+    iso = last_mon.isocalendar()
+    wkey = f"{iso[0]}-W{iso[1]:02d}"
+    w0 = _dt.datetime.combine(last_mon, _dt.time()).timestamp()
+    newm = []
+    for u in users:
+        prefs = json.loads(u["email_prefs"] or "{}")
+        if prefs.get("weekly"):
+            _weekly_digest(u["id"], w0, wkey)
+        if prefs.get("new_music"):
+            newm.append(u["id"])
+        if prefs.get("eoy") and today.month == 12:
+            _eoy_mail(u["id"], today.year)
+    if newm:
+        _new_music_digest(newm, wkey)
+
+def _email_loop():
+    sleep(30)
+    while True:
+        try:
+            _email_tick()
+        except Exception as e:
+            print(f"[email] scheduler: {e}", file=sys.stderr)
+        sleep(600)
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():

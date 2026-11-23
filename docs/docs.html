@@ -32,7 +32,7 @@
   <b>Live radio</b>
   <a href="#radio">What it is</a><a href="#radio-how">How it works</a><a href="#icecast">Install Icecast</a><a href="#radio-setup">Setting up stations</a><a href="#radio-listen">Listening</a><a href="#radio-manage">Managing &amp; fixes</a><a href="#streams">Internet radio streams</a>
   <b>Admin</b>
-  <a href="#admin">Admin panel</a><a href="#admins">Admin accounts</a><a href="#data">Configuration &amp; data</a><a href="#build">Building an app</a>
+  <a href="#admin">Admin panel</a><a href="#admins">Admin accounts</a><a href="#email">Email</a><a href="#data">Configuration &amp; data</a><a href="#build">Building an app</a>
   <b>Reference</b>
   <a href="#api">API</a><a href="#security">Security</a><a href="#faq">Troubleshooting</a>
 </aside>
@@ -344,9 +344,25 @@ pyinstaller --onefile --windowed --name "leon.music" leon_music.py</pre></div>
 <tr><td><code>/api/me/friends</code>, <code>/api/me/friends/{name}</code></td><td>Friends and requests</td></tr>
 <tr><td><code>GET /api/christmas</code></td><td>The Christmas category page</td></tr>
 <tr><td><code>POST /api/covers/preview</code>, <code>GET /api/covers/fonts</code>, <code>/api/me/playlists/{id}/cover</code></td><td>Cover designer</td></tr>
+<tr><td><code>/api/me/email</code>, <code>POST /api/auth/forgot</code>, <code>/api/auth/reset</code></td><td>Email address, preferences and password reset</td></tr>
 <tr><td><code>GET /api/explicit</code></td><td>IDs of explicit songs</td></tr>
 <tr><td><code>GET|POST /api/broadcast</code></td><td>Live radio setup (admin)</td></tr>
 <tr><td><code>/api/admin/*</code></td><td>Admin actions (users, settings, stations)</td></tr></table>
+
+<h2 id="email">Email</h2>
+<p>leon.music can send emails through your own mail provider: password resets, digests, friend notifications and server alerts.</p>
+<ol><li>Open the admin panel's <b>Email</b> card and fill in your provider's SMTP details. Gmail and Outlook need an <b>app password</b>; services like Brevo or Resend give you SMTP details too.</li>
+<li>Set the <b>public address</b> of your server, so links in emails point to the right place.</li>
+<li>Press <b>Send test email</b>.</li></ol>
+<p>Each person adds their address in <b>Settings → Email</b> (confirming with their password) and clicks the link they're sent. Then they pick which emails they want; everything starts off:</p>
+<ul><li><b>Weekly Rewind digest</b> on Monday mornings.</li>
+<li><b>New music</b> added to the server that week, with album covers.</li>
+<li><b>Friends</b>: friend requests, accepted requests and playlists your friends share.</li>
+<li><b>New login</b> to your account.</li>
+<li><b>End of Year Rewind</b> in December.</li>
+<li>Admins also get <b>server alerts</b>: a radio station off air for 10 minutes, a failed library scan, or a nearly full disk. You can send these to an extra address too.</li></ul>
+<p><b>Forgot password?</b> on the login screen emails a reset link (one hour, single use) to a confirmed address. Adding an account with an email sends a welcome. Every optional email has an unsubscribe link.</p>
+<div class="note tip"><span>💡</span><span>The SMTP password is saved in <code>config.json</code> on the server and never shown again in the admin panel.</span></div>
 
 <h2 id="security">Security</h2>
 <ul><li>All passwords (admin, library and accounts) are salted <b>scrypt</b> hashes. Older plain-text admin passwords are converted automatically.</li>
