@@ -932,6 +932,15 @@ textarea.setup-input{resize:vertical;font-family:inherit;margin-bottom:12px}
 .cd-flist button small{font:500 10.5px 'Montserrat',sans-serif;color:var(--fg3);margin-left:8px}
 .cd-flist button:hover{background:var(--bg3)}.cd-flist button.on{background:color-mix(in srgb,var(--accent) 18%,var(--bg3))}
 .cd-fempty{font-size:12px;color:var(--fg3);padding:8px}
+.au-link{background:none!important;color:var(--fg2)!important;font:600 12px 'Montserrat',sans-serif!important;padding:10px 0 0!important;text-decoration:underline;cursor:pointer}
+.au-ok{font-size:13px;color:var(--fg2);line-height:1.55;margin-bottom:16px}
+.em-box{display:flex;flex-direction:column;gap:10px;padding:6px 0 4px}
+.em-line{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.em-line .settings-input{flex:1;min-width:180px}
+.em-state{font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;background:var(--bg3);color:var(--fg2)}
+.em-state.ok{background:color-mix(in srgb,#2fbf71 20%,var(--bg3));color:#2fbf71}
+.em-err{color:var(--accent2);font-size:12px;min-height:16px}
+.ua-mail{font-size:11px;color:var(--fg3);margin-left:6px}
 </style>
 </head>
 <body>
@@ -1021,10 +1030,11 @@ textarea.setup-input{resize:vertical;font-family:inherit;margin-bottom:12px}
 <div class="au hidden" id="authScreen"><form class="au-card" onsubmit="doLogin(event)">
   <div class="au-logo"><div class="dot"></div><span id="auBrand">leon.music</span></div>
   <div class="au-h">Log in</div><div class="au-sub">Use the account your server admin gave you.</div>
-  <label for="auUser">Username</label><input id="auUser" autocomplete="username" required>
+  <div class="au-body"><label for="auUser">Username</label><input id="auUser" autocomplete="username" required>
   <div class="au-hint" id="auHint" style="display:none">Leave the username blank to use the shared library password.</div>
   <label for="auPw">Password</label><input id="auPw" type="password" autocomplete="current-password" required>
-  <div class="au-err" id="auErr" role="alert"></div><button id="auBtn">Log in</button></form></div>
+  <div class="au-err" id="auErr" role="alert"></div><button id="auBtn">Log in</button>
+  <button type="button" class="au-link" onclick="showForgot()">Forgot password?</button></div></form></div>
 <div class="ob hidden" id="onboard" role="dialog" aria-modal="true" aria-label="Pick your genres"></div>
 <div class="lyrics" id="lyricsPane" role="dialog" aria-label="Lyrics"><div class="ly-bg" id="lyBg"></div>
   <div class="ly-top"><div class="ly-head" id="lyHead"></div><button class="ly-x" onclick="toggleLyrics(false)" aria-label="Close lyrics">✕</button></div>
@@ -1208,6 +1218,10 @@ textarea.setup-input{resize:vertical;font-family:inherit;margin-bottom:12px}
         <div class="view" id="view-rewind"><div id="rewindBody"></div></div>
         <!-- SETTINGS -->
         <div class="view" id="view-settings">
+          <div class="settings-section" id="emailSection" style="display:none">
+            <div class="settings-title">Email</div>
+            <div id="emailSettings"></div>
+          </div>
           <div class="settings-section admin-only">
             <div class="settings-title">Users</div>
             <div id="usersAdmin"></div>
@@ -1610,7 +1624,7 @@ function showView(name){
   if(name!=='upl')_uplCur=null;
   renderUplNav();
   if(name==='mix')loadMixView();
-  if(name==='settings')loadUsersAdmin();
+  if(name==='settings'){loadUsersAdmin();loadEmailSettings();}
   if(name!=='new')closeSongMenu();
 }
 
@@ -2726,6 +2740,7 @@ async function loadUsersAdmin(){
   let users=[];try{users=await api('/api/admin/users');}catch(_){box.innerHTML='<div class="settings-desc">Could not load accounts.</div>';return;}
   box.innerHTML=`<form class="ua-add" id="uaForm"><input class="settings-input" id="uaName" placeholder="Username" autocomplete="off" required>
       <input class="settings-input" id="uaPw" type="password" placeholder="Password (8+ characters)" autocomplete="new-password" required minlength="8">
+      <input class="settings-input" id="uaMail" type="email" placeholder="Email (optional, sends a welcome)" autocomplete="off">
       <button class="btn-play-big" style="font-size:11px;padding:8px 16px">Add user</button></form>
     <div class="ua-err" id="uaErr"></div>
     ${users.length?'':'<div class="settings-desc" style="padding:6px 0 4px">No accounts yet. Creating the first one turns on login for everyone, and you sign in as <b>admin</b> with the admin password.</div>'}
@@ -2733,7 +2748,7 @@ async function loadUsersAdmin(){
   const list=box.querySelector('#uaList');
   users.forEach(u=>{
     const r=document.createElement('div');r.className='settings-row';
-    r.innerHTML=`<div><div class="settings-label">${esc(u.username)}${u.is_admin?'<span class="ua-badge">Admin</span>':''}</div><div class="settings-desc">${u.onboarded?'Likes '+esc(u.genres.length+' genre'+(u.genres.length===1?'':'s')):'Hasn\'t logged in yet'}</div></div>
+    r.innerHTML=`<div><div class="settings-label">${esc(u.username)}${u.is_admin?'<span class="ua-badge">Admin</span>':''}${u.email?`<span class="ua-mail">${esc(u.email)}${u.email_verified?' ✓':' (not confirmed)'}</span>`:''}</div><div class="settings-desc">${u.onboarded?'Likes '+esc(u.genres.length+' genre'+(u.genres.length===1?'':'s')):'Hasn\'t logged in yet'}</div></div>
       <div style="display:flex;gap:6px"><button class="rd-btn" data-a="adm">${u.is_admin?'Remove admin':'Make admin'}</button><button class="rd-btn" data-a="pw">Reset password</button><button class="rd-btn" data-a="del">Delete</button></div>`;
     r.querySelector('[data-a=adm]').onclick=async()=>{
       if(!u.is_admin&&!confirm(`Give ${u.username} full admin rights (settings, users, radio)?`))return;
@@ -2751,7 +2766,7 @@ async function loadUsersAdmin(){
   box.querySelector('#uaForm').onsubmit=async e=>{
     e.preventDefault();
     const x=await adminFetch('/api/admin/users',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({username:box.querySelector('#uaName').value,password:box.querySelector('#uaPw').value})});
+      body:JSON.stringify({username:box.querySelector('#uaName').value,password:box.querySelector('#uaPw').value,email:box.querySelector('#uaMail').value})});
     if(!x.ok){box.querySelector('#uaErr').textContent=(await x.json()).detail||'Failed';return;}
     loadUsersAdmin();
   };
@@ -4136,6 +4151,98 @@ async function saveLibName(v){
 }
 function setLibName(v){document.getElementById('libName').textContent=v||'leon.music';document.title=v||'leon.music';}
 
+// ── Email: forgot / reset password, email settings, deep links from emails ──
+function showForgot(){
+  const card=document.querySelector('#authScreen .au-card');
+  card.onsubmit=async e=>{e.preventDefault();
+    const btn=card.querySelector('button');btn.disabled=true;
+    const r=await fetch('/api/auth/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:card.querySelector('#fgUser').value})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){card.querySelector('.au-err').textContent=d.detail||'Something went wrong';btn.disabled=false;return;}
+    card.querySelector('.au-body').innerHTML=d.email
+      ?'<div class="au-ok">If that account has a confirmed email address, a reset link is on its way. It works for one hour.<br><br>No email? Check your spam folder, or ask your server admin to reset your password.</div><button type="button" onclick="location.href='/'">Back to log in</button>'
+      :'<div class="au-ok">This server can\'t send emails yet. Ask your server admin to reset your password for you.</div><button type="button" onclick="location.href='/'">Back to log in</button>';
+  };
+  card.querySelector('.au-h').textContent='Forgot your password?';
+  card.querySelector('.au-sub').textContent='Enter your username or email address.';
+  card.querySelector('.au-body').innerHTML=`<label for="fgUser">Username or email</label><input id="fgUser" required autocomplete="username">
+    <div class="au-err" role="alert"></div><button>Send reset link</button><button type="button" class="au-link" onclick="location.href='/'">Back to log in</button>`;
+  card.querySelector('#fgUser').value=document.getElementById('auUser')?.value||'';
+  setTimeout(()=>card.querySelector('#fgUser').focus(),30);
+}
+function showReset(token){
+  document.getElementById('setup').style.display='none';
+  const el=document.getElementById('authScreen');el.classList.remove('hidden');
+  const card=el.querySelector('.au-card');
+  card.querySelector('.au-h').textContent='Choose a new password';
+  card.querySelector('.au-sub').textContent='You\'ll be signed out on your other devices.';
+  card.querySelector('.au-body').innerHTML=`<label for="rsPw">New password</label><input id="rsPw" type="password" autocomplete="new-password" required minlength="8">
+    <label for="rsPw2">Type it again</label><input id="rsPw2" type="password" autocomplete="new-password" required minlength="8">
+    <div class="au-err" role="alert"></div><button>Save password</button>`;
+  card.onsubmit=async e=>{e.preventDefault();
+    const err=card.querySelector('.au-err'),pw=card.querySelector('#rsPw').value;
+    if(pw!==card.querySelector('#rsPw2').value){err.textContent='The passwords don\'t match';return;}
+    const r=await fetch('/api/auth/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){err.textContent=d.detail||'Could not reset the password';return;}
+    history.replaceState(null,'','/');
+    card.querySelector('.au-h').textContent='Password changed';
+    card.querySelector('.au-sub').textContent='';
+    card.querySelector('.au-body').innerHTML=`<div class="au-ok">Log in as <b>${esc(d.username)}</b> with your new password.</div><button type="button" onclick="location.href='/'">Log in</button>`;
+  };
+  setTimeout(()=>card.querySelector('#rsPw').focus(),30);
+}
+async function loadEmailSettings(){
+  const sec=document.getElementById('emailSection'),box=document.getElementById('emailSettings');
+  if(!sec)return;
+  if(!ME||ME.id===0||ME.admin&&!ME.id){sec.style.display='none';return;}
+  let d;try{d=await api('/api/me/email');}catch(_){sec.style.display='none';return;}
+  sec.style.display='';
+  if(!d.available&&!d.email){box.innerHTML='<div class="settings-desc" style="padding:6px 0">Your server admin hasn\'t set up email yet. Once they do, you can add your address here to reset your password and get digests.</div>';return;}
+  const state=d.email?(d.verified?'<span class="em-state ok">✓ Confirmed</span>':'<span class="em-state">Waiting for you to confirm</span>'):'';
+  box.innerHTML=`<div class="em-box">
+      <div class="em-line"><input class="settings-input" id="emAddr" type="email" placeholder="you@example.com" value="${esc(d.email)}" autocomplete="email">${state}</div>
+      <div class="em-line" id="emPwLine" style="display:none"><input class="settings-input" id="emPw" type="password" placeholder="Your password, to confirm the change" autocomplete="current-password">
+        <button class="rd-btn pri" id="emSave">Save</button></div>
+      <div class="em-err" id="emErr"></div>
+      ${d.email&&!d.verified?'<div class="em-line"><span class="settings-desc">Open the link we emailed you to confirm it.</span><button class="rd-btn" id="emResend">Send again</button></div>':''}
+      ${d.email?'<div class="em-line"><button class="rd-btn" id="emRemove">Remove address</button></div>':''}
+    </div>
+    <div id="emKinds" ${d.verified?'':'style="display:none"'}></div>`;
+  const addr=box.querySelector('#emAddr'),err=box.querySelector('#emErr');
+  addr.oninput=()=>{box.querySelector('#emPwLine').style.display=addr.value.trim()&&addr.value.trim()!==d.email?'':'none';};
+  box.querySelector('#emSave').onclick=async()=>{
+    err.textContent='';
+    const r=await fetch('/api/me/email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:addr.value.trim(),password:box.querySelector('#emPw').value})});
+    const x=await r.json().catch(()=>({}));
+    if(!r.ok){err.textContent=x.detail||'Could not save';return;}
+    toast('Check your inbox to confirm your email');loadEmailSettings();
+  };
+  const rs=box.querySelector('#emResend');if(rs)rs.onclick=async()=>{const r=await fetch('/api/me/email/resend',{method:'POST'});
+    const x=await r.json().catch(()=>({}));r.ok?toast('Sent. Check your inbox'):err.textContent=x.detail||'Could not send';};
+  const rm=box.querySelector('#emRemove');if(rm)rm.onclick=async()=>{if(!confirm('Remove your email address? You won\'t be able to reset your password by email.'))return;
+    await fetch('/api/me/email',{method:'DELETE'});loadEmailSettings();};
+  const kb=box.querySelector('#emKinds');
+  d.kinds.forEach(k=>{const r=document.createElement('div');r.className='settings-row';
+    r.innerHTML=`<div><div class="settings-label">${esc(k.label)}</div></div><button class="toggle${k.on?' on':''}" role="switch" aria-checked="${k.on}" aria-label="${esc(k.label)}"></button>`;
+    const t=r.querySelector('.toggle');
+    t.onclick=async()=>{const on=!t.classList.contains('on');t.classList.toggle('on',on);t.setAttribute('aria-checked',on);
+      const x=await fetch('/api/me/email/prefs',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({[k.key]:on})});
+      if(!x.ok){t.classList.toggle('on',!on);toast('Could not save');}};
+    kb.appendChild(r);});
+  if(d.verified){const h=document.createElement('div');h.className='settings-desc';h.style.padding='10px 0 0';
+    h.textContent='Password reset emails always work with a confirmed address. Every email has an unsubscribe link.';kb.appendChild(h);}
+}
+function openFromEmailLink(){
+  const q=new URLSearchParams(location.search);if(!q.toString())return;
+  const v=q.get('view'),pl=q.get('playlist');
+  history.replaceState(null,'','/');
+  if(pl&&/^u\d+$/.test(pl))openUserPlaylist(+pl.slice(1));
+  else if(v==='weekly-rewind')openWeekly();
+  else if(v==='rewind')openRewind();
+  else if(['friends','new','settings'].includes(v))showView(v);
+}
+
 // ═══════════════════════════════════════════════
 //  BOOT
 // ═══════════════════════════════════════════════
@@ -4147,11 +4254,14 @@ function setLibName(v){document.getElementById('libName').textContent=v||'leon.m
     const st=await fetch('/api/status').then(r=>r.json());
     document.getElementById('auBrand').textContent=st.name||'leon.music';
     document.getElementById('libName').textContent=st.name||'leon.music';
+    const rt=new URLSearchParams(location.search).get('reset');
+    if(rt){showReset(rt);return;}
     const me=await fetch('/api/auth/me').then(r=>r.json()).catch(()=>({}));
     ME=me.user||null;
     if(me.required&&!ME&&!isAdmin&&!me.shared){showLogin(me.library_password);return;}
     if(st.tracks>0){document.getElementById('setup').style.display='none';initApp();renderUserChip();
-      if(ME&&!ME.admin&&!ME.onboarded)showOnboarding();}
+      if(ME&&!ME.admin&&!ME.onboarded)showOnboarding();
+      else setTimeout(openFromEmailLink,300);}
     // else show setup (already visible by default)
   }catch(e){/* server not responding yet, show setup */}
 })();
