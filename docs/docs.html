@@ -26,19 +26,19 @@
   <b>Getting started</b>
   <a href="#install">Install</a><a href="#first-run">First run</a><a href="#library">Organising your library</a>
   <b>Using leon.music</b>
-  <a href="#home">Home &amp; Made for You</a><a href="#search">Search, genres &amp; decades</a><a href="#new">New &amp; Charts</a><a href="#rewind">Rewind</a>
+  <a href="#home">Home &amp; Made for You</a><a href="#search">Search, genres &amp; decades</a><a href="#new">New &amp; Charts</a><a href="#rewind">Rewind</a><a href="#likes">Likes &amp; playlists</a><a href="#lyrics">Lyrics</a><a href="#albums">Album pages</a><a href="#explicit">Explicit songs</a>
   <b>Sharing</b>
-  <a href="#accounts">Accounts &amp; logins</a><a href="#remote">Listening from anywhere</a>
+  <a href="#accounts">Accounts &amp; logins</a><a href="#profiles">Profiles &amp; friends</a><a href="#remote">Listening from anywhere</a>
   <b>Live radio</b>
   <a href="#radio">What it is</a><a href="#radio-how">How it works</a><a href="#icecast">Install Icecast</a><a href="#radio-setup">Setting up stations</a><a href="#radio-listen">Listening</a><a href="#radio-manage">Managing &amp; fixes</a><a href="#streams">Internet radio streams</a>
   <b>Admin</b>
-  <a href="#admin">Admin panel</a><a href="#data">Configuration &amp; data</a><a href="#build">Building an app</a>
+  <a href="#admin">Admin panel</a><a href="#admins">Admin accounts</a><a href="#data">Configuration &amp; data</a><a href="#build">Building an app</a>
   <b>Reference</b>
   <a href="#api">API</a><a href="#security">Security</a><a href="#faq">Troubleshooting</a>
 </aside>
 
 <article class="doc">
-<div class="eyebrow">Documentation · v2.0</div>
+<div class="eyebrow">Documentation · v2.1</div>
 <h1>leon.music docs</h1>
 <p class="lead">Everything you need to run your own streaming service: installation, accounts, live radio and the admin panel.</p>
 
@@ -95,6 +95,35 @@ python leon_music.py</pre></div>
 <li><b>End of Year Rewind</b>: every December a banner on Home opens a summary of the whole year.</li></ul>
 <p>Minutes assume a counted song was played in full, so totals are a close estimate.</p>
 
+<h2 id="likes">Likes &amp; your own playlists</h2>
+<div class="duo"><div class="window"><img class="zoomable" src="assets/playlist.jpg" alt="A user playlist" loading="lazy"></div><div class="window"><img class="zoomable" src="assets/album-featured.jpg" alt="Album page with explicit badges" loading="lazy"></div></div>
+<ul><li><b>♥ Like</b> any song with the heart on a song row or in the player, or from its <b>···</b> menu. Liked songs collect in <b>Liked Songs</b> at the top of the sidebar's Playlists, newest first.</li>
+<li><b>Make playlists</b> with <b>+ New playlist</b> in the sidebar, or <b>··· → Add to playlist…</b> on any song (pick an existing one or create a new one). <b>Save as playlist</b> on Liked Songs copies them into a playlist.</li>
+<li>On a playlist page: <b>drag songs</b> to reorder (with a mouse), <b>✕</b> removes a song, and <b>Edit</b> changes the name and description or deletes it.</li>
+<li><b>Share</b> a playlist (Edit → "Share with everyone on this server", or in your profile settings) and it appears in everyone's sidebar with ⇄. Others can play it or <b>Save a copy</b>, but only you can change it.</li>
+<li>Likes and playlists belong to each account. On a server without accounts there's one shared set. People logged in only with the shared library password can't use them, because everyone shares that login.</li></ul>
+
+<h2 id="lyrics">Lyrics</h2>
+<figure><div class="window"><img class="zoomable" src="assets/lyrics.jpg" alt="Synced lyrics" loading="lazy"></div><figcaption>Tap <b>Ly</b> in the player. Synced lyrics follow the song; tap a line to jump there.</figcaption></figure>
+<p>leon.music looks for lyrics in this order, and saves what it finds:</p>
+<ol><li><b>A <code>.lrc</code> file next to the song</b> with the same name, for example <code>Song.mp3</code> + <code>Song.lrc</code>. Timestamped lines like <code>[01:23.45]</code> give synced lyrics.</li>
+<li><b>Lyrics stored inside the file</b> (ID3 USLT, Vorbis <code>LYRICS</code>, iTunes lyrics).</li>
+<li><b><a href="https://lrclib.net">LRCLIB</a></b>, a free, open lyrics database, when online lookup is on. It receives the artist, title, album and length. Each song is looked up once; misses are retried after a week.</li></ol>
+<p>Turn online lookup off in the admin panel's <b>Artists</b> card ("Look up lyrics on LRCLIB").</p>
+
+<h2 id="albums">Album pages</h2>
+<p>Under the track list, album pages show:</p>
+<ul><li><b>Featured On</b>: the artist's <b>Essentials</b>, the <b>folder playlists</b> that include songs from the album, and the <b>genre and decade playlists</b> from Search's categories that include them (for example <i>Pop Hits</i> or <i>2020s Deep Cuts</i>), with how many of the album's songs each one has.</li>
+<li><b>More from <i>artist</i></b>: their other albums.</li>
+<li><b>You May Also Like</b>: albums by other artists, genre matches first, then similar era and what's popular on the server.</li></ul>
+
+<h2 id="explicit">Explicit songs</h2>
+<p>Songs tagged as explicit get a small <span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:3px;background:#a6a6b0;color:#0c0c0e;font-size:9.5px;font-weight:800;vertical-align:2px">E</span> badge everywhere. leon.music reads:</p>
+<ul><li>the iTunes rating on M4A/AAC files (explicit, or clean),</li>
+<li>an <code>ITUNESADVISORY</code> (1 = explicit, 2 = clean) or <code>EXPLICIT</code> tag on MP3, FLAC and OGG,</li>
+<li>"(Explicit)" or "[Explicit]" in the title.</li></ul>
+<p>Songs without any of these count as clean. Existing libraries are checked once in the background after updating; new files are checked when they're scanned. Live radio stations can skip explicit songs; see <a href="#radio-setup">Program the schedule</a>.</p>
+
 <h2 id="accounts">Accounts &amp; logins</h2>
 <figure><div class="window"><img class="zoomable" src="assets/users.jpg" alt="Settings: users" loading="lazy"></div><figcaption>Settings → Users (admin only).</figcaption></figure>
 <p>Add accounts under <b>Settings → Users</b>. As soon as the first account exists (or a library password is set), everyone has to log in on the same screen:</p>
@@ -103,6 +132,17 @@ python leon_music.py</pre></div>
 <tr><td>The admin</td><td><code>admin</code></td><td>the admin password</td></tr>
 <tr><td>Anyone with the shared password</td><td><i>leave blank</i></td><td>the library password</td></tr></table>
 <p>Passwords are 8 or more characters and stored as salted scrypt hashes. Logins last 30 days. After 5 wrong attempts, logins from that device pause for 5 minutes. Resetting a user's password signs them out everywhere.</p>
+
+<h2 id="profiles">Profiles &amp; friends</h2>
+<div class="duo"><div class="window"><img class="zoomable" src="assets/profile.jpg" alt="A profile page" loading="lazy"></div><div class="window"><img class="zoomable" src="assets/friends.jpg" alt="Friends page" loading="lazy"></div></div>
+<p>Everyone with an account can set up a profile. A <b>Set up your profile</b> card appears on Home, and <b>Edit profile</b> on your profile page reopens the wizard:</p>
+<ol><li><b>You</b>: profile photo (cropped to a square automatically), display name, username and bio. Changing your username also changes what you log in with.</li>
+<li><b>Playlists</b>: which of your playlists (and whether your Liked Songs) appear on your profile.</li>
+<li><b>Privacy</b>: who can see your listening (<i>everyone on this server</i>, <i>only my friends</i>, or <i>only me</i>) and whether to show your top artists and songs.</li></ol>
+<p><b>Profile pages</b> show the photo, name, bio and friends, a <b>Listening now</b> strip, top artists and songs this month, recently played, and public playlists, all following that person's privacy choices. Click your own name in the sidebar to see yours.</p>
+<p><b>Friends</b> (in the sidebar): search everyone on the server, send requests, accept or decline them, and see what your friends are playing right now. Both people have to agree; removing a friend removes it for both.</p>
+<figure><div class="window"><img class="zoomable" src="assets/friends-mix.jpg" alt="Friends Mix" loading="lazy"></div><figcaption>The <b>Friends Mix</b> in Made for You: what your friends played in the last three weeks, with who played what.</figcaption></figure>
+<p>New profiles share listening with <b>friends only</b>. Friends who choose <i>only me</i> are left out of your Friends Mix.</p>
 
 <h2 id="remote">Listening from anywhere</h2>
 <p>leon.music listens on <code>127.0.0.1:7733</code>. To use it from your phone or away from home, put it behind a reverse proxy with HTTPS, such as Caddy, nginx, Tailscale Serve or Cloudflare Tunnel.</p>
@@ -190,7 +230,8 @@ python leon_music.py</pre></div>
 
 <h3>2. Program the schedule</h3>
 <figure><div class="window"><img class="zoomable" src="assets/wizard-schedule.jpg" alt="Wizard step 2: schedule" loading="lazy"></div></figure>
-<ul><li><b>Normal rotation</b>: what the station plays when no show is on. Pick one or more playlists, or <i>Entire library</i>. Ready-made stations pre-select playlists whose names match (for example a "chill" or "lofi" folder for Chill).</li>
+<ul><li><b>Allow explicit songs</b>: switch it off and the station skips every song tagged explicit. Switch it on and it plays them, with an <b>E</b> on the station. Stations default to on.</li>
+<li><b>Normal rotation</b>: what the station plays when no show is on. Pick one or more playlists, or <i>Entire library</i>. Ready-made stations pre-select playlists whose names match (for example a "chill" or "lofi" folder for Chill).</li>
 <li><b>Shows</b>: click <b>+ Add a show</b>, give it a name, pick the days, a start and end time, and its playlists. A show can run past midnight (for example 22:00–02:00 on Fridays and Saturdays). Add an optional <b>cover image</b>; otherwise the station logo is used.</li>
 <li><b>Week at a glance</b> shows every show as a coloured bar, so you can spot overlaps and gaps (gaps play the normal rotation). If shows overlap, the one listed first wins.</li>
 <li>The <b>Holiday</b> station is special: it plays exactly <b>one</b> playlist, your Christmas playlist, around the clock, with no shows.</li></ul>
@@ -243,16 +284,25 @@ python leon_music.py</pre></div>
 <p>Open <code>/admin</code> (for example <code>http://localhost:7733/admin</code>) and sign in with the admin password.</p>
 <ul><li><b>Logo &amp; covers</b>: place your logo on Essentials and playlist covers. It also appears on Made for You cards.</li>
 <li><b>Theme</b>: accent colour, hero banner image and tint.</li>
-<li><b>Artists</b>: turn online artist photos on or off, force Essentials pages, set photos by URL.</li>
+<li><b>Artists</b>: turn online artist photos and online lyrics (LRCLIB) on or off, force Essentials pages, set photos by URL.</li>
 <li><b>Release years</b>: look up missing release years on Deezer, with live progress.</li>
 <li><b>Radio stations</b>: add and remove internet radio streams.</li>
 <li><b>Security</b>: change the admin password, set or clear the library password.</li></ul>
+
+<h2 id="admins">Admin accounts</h2>
+<p>Besides the built-in <code>admin</code> login, any user account can be an admin. It keeps its own profile, likes and playlists and also gets the admin controls (including <code>/admin</code>) just by logging in. Use <b>Make admin</b> in Settings → Users, or the command line from the folder with <code>leon_music.py</code>:</p>
+<div class="code"><button class="copy">Copy</button><pre>cd path\to\leonmusic
+python leon_music.py admin list              <span class="c"># accounts, ★ = admin</span>
+python leon_music.py admin add alex          <span class="c"># make an account an admin</span>
+python leon_music.py admin remove alex       <span class="c"># take it away again</span>
+python leon_music.py admin create someone    <span class="c"># new admin account, asks for a password</span></pre></div>
+<p>The commands work while leon.music is running. They need the Python version; with the packaged app, use <b>Make admin</b> in Settings instead.</p>
 
 <h2 id="data">Configuration &amp; data</h2>
 <p>Everything lives in <code>~/.leon-music/</code>. Your music files are only read, never modified.</p>
 <table><tr><th>Path</th><th>Contents</th></tr>
 <tr><td><code>config.json</code></td><td>Library path and name, theme, password hashes, radio and live-radio setup (including the Icecast source password)</td></tr>
-<tr><td><code>library.db</code></td><td>Track index, embedded covers, plays, accounts, sessions and mixes</td></tr>
+<tr><td><code>library.db</code></td><td>Track index, embedded covers, plays, accounts, sessions, mixes, likes, playlists, profiles, friends and saved lyrics</td></tr>
 <tr><td><code>playlist-covers/</code></td><td>Generated playlist covers</td></tr>
 <tr><td><code>artist-pics/</code></td><td>Cached or custom artist photos</td></tr></table>
 <p>To start over, delete the folder. To use a different port, change <code>PORT</code> near the top of <code>leon_music.py</code>.</p>
@@ -275,6 +325,13 @@ pyinstaller --onefile --windowed --name "leon.music" leon_music.py</pre></div>
 <tr><td><code>POST /api/auth/login</code>, <code>/auth/logout</code>, <code>GET /api/auth/me</code></td><td>Logins</td></tr>
 <tr><td><code>GET /api/me/home</code>, <code>/me/rewind</code>, <code>/me/rewind/week</code></td><td>Personal mixes and Rewind</td></tr>
 <tr><td><code>GET /api/radio/stations</code>, <code>/radio/{id}/now</code></td><td>Radio stations and now playing</td></tr>
+<tr><td><code>GET|POST|DELETE /api/me/likes</code></td><td>Liked Songs</td></tr>
+<tr><td><code>/api/me/playlists</code>, <code>/api/me/playlists/{id}</code></td><td>Your playlists (create, edit, reorder, share)</td></tr>
+<tr><td><code>GET /api/lyrics/{id}</code></td><td>Lyrics (synced or plain)</td></tr>
+<tr><td><code>GET /api/albums/related?album=</code></td><td>Featured On, More from, You May Also Like</td></tr>
+<tr><td><code>GET|PATCH /api/me/profile</code>, <code>GET /api/users/{name}</code></td><td>Profiles</td></tr>
+<tr><td><code>/api/me/friends</code>, <code>/api/me/friends/{name}</code></td><td>Friends and requests</td></tr>
+<tr><td><code>GET /api/explicit</code></td><td>IDs of explicit songs</td></tr>
 <tr><td><code>GET|POST /api/broadcast</code></td><td>Live radio setup (admin)</td></tr>
 <tr><td><code>/api/admin/*</code></td><td>Admin actions (users, settings, stations)</td></tr></table>
 
@@ -283,7 +340,8 @@ pyinstaller --onefile --windowed --name "leon.music" leon_music.py</pre></div>
 <li>Logins are rate-limited, and cookies are HTTP-only (and secure over HTTPS).</li>
 <li>The API isn't open to other websites (no CORS).</li>
 <li>Admin actions that fetch URLs (covers, artist photos) make requests from your machine, so only give admin access to people you trust.</li>
-<li>Artist photo lookup and the release-year scan send artist and song names to deezer.com. Both can be turned off or simply not used.</li>
+<li>Artist photo lookup and the release-year scan send artist and song names to deezer.com, and lyrics lookup sends artist, title, album and length to lrclib.net. Each can be turned off.</li>
+<li>Listening activity on profiles is shared with friends only by default, and each person can change it to everyone or only themselves.</li>
 <li>The Icecast source password is stored in <code>config.json</code> so stations can reconnect, and is never sent back to the browser.</li></ul>
 <p>Found a vulnerability? Please open a <a href="https://github.com/weareleon/leonmusic/security/advisories/new">private security advisory</a> instead of a public issue.</p>
 

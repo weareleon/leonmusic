@@ -17,7 +17,7 @@
 <header class="nav"><div class="nav-in">
   <a class="brand" href="./"><i></i>leon.music</a>
   <nav class="nav-links" id="navLinks">
-    <a href="#features">Features</a><a href="#radio">Live radio</a><a href="#rewind">Rewind</a>
+    <a href="#features">Features</a><a href="#social">Friends</a><a href="#radio">Live radio</a><a href="#rewind">Rewind</a>
     <a href="#install">Install</a><a href="docs.html">Docs</a>
   </nav>
   <a class="btn sm gh" href="https://github.com/weareleon/leonmusic">GitHub</a>
@@ -27,9 +27,9 @@
 
 <main>
 <section class="hero center"><div class="wrap">
-  <a class="pill" href="https://github.com/weareleon/leonmusic/releases/latest"><b>v2.0</b>The Biggest Music Update is out →</a>
+  <a class="pill" href="https://github.com/weareleon/leonmusic/releases/latest"><b>v2.1</b>Profiles, friends, lyrics &amp; your own playlists →</a>
   <h1>Your music. Your server. <em>Your radio.</em></h1>
-  <p class="lead">leon.music turns a folder of songs into your own streaming service, with search, charts, personal mixes, Rewind and live radio stations. It runs on your computer: no cloud, no subscription, no tracking.</p>
+  <p class="lead">leon.music turns a folder of songs into your own streaming service, with search, charts, personal mixes, synced lyrics, friends, Rewind and live radio stations. It runs on your computer: no cloud, no subscription, no tracking.</p>
   <div class="cta">
     <a class="btn pri" href="#install">Get started, it's free</a>
     <a class="btn" href="docs.html">Read the docs</a>
@@ -52,6 +52,9 @@
     <div class="card" style="--c1:#ff375f;--c2:#bf5af2"><div class="ic">♥</div><h3>Made for You</h3><p>New Music, Heavy Rotation, Your Essentials, Get Up! and Chill: personal mixes that refresh every day.</p></div>
     <div class="card" style="--c1:#ffb300;--c2:#ff3d00"><div class="ic">⟲</div><h3>Rewind</h3><p>Weekly stats, a yearly Rewind with top artists and songs, a playlist for every year, and an End of Year Rewind.</p></div>
     <div class="card" style="--c1:#00c2a8;--c2:#0a84ff"><div class="ic">◉</div><h3>Live radio</h3><p>Run your own scheduled radio stations and broadcast them through Icecast to anyone, anywhere.</p></div>
+    <div class="card" style="--c1:#5b21ff;--c2:#ff5fa2"><div class="ic">♥</div><h3>Likes &amp; playlists</h3><p>Heart songs into Liked Songs, build your own playlists, drag to reorder and share them with everyone.</p></div>
+    <div class="card" style="--c1:#ff2d55;--c2:#bf5af2"><div class="ic">❝</div><h3>Synced lyrics</h3><p>Full-screen lyrics that follow the song, from your .lrc files, your tags or the free LRCLIB database.</p></div>
+    <div class="card" style="--c1:#30d158;--c2:#0a84ff"><div class="ic">☺</div><h3>Profiles &amp; friends</h3><p>Profiles, friend requests, see what friends are playing, and a Friends Mix made from their listening.</p></div>
   </div>
 </div></section>
 
@@ -102,6 +105,38 @@
       <div class="window"><div class="bar"><span></span><span></span><span></span><em>Home</em></div><img class="zoomable" src="assets/home-foryou.jpg" alt="Made for You mixes" loading="lazy"></div>
       <div class="window"><img class="zoomable" src="assets/onboarding.jpg" alt="Genre picker for new users" loading="lazy"></div>
     </div>
+  </div>
+</div></section>
+
+<section id="social" style="padding-top:0"><div class="wrap">
+  <div class="show">
+    <div class="txt">
+      <div class="eyebrow">Profiles &amp; friends</div>
+      <h2>Music is better with friends</h2>
+      <p class="lead">Everyone on your server gets a profile. Add friends to see what they're playing and get a mix made from their listening.</p>
+      <ul>
+        <li><span><b>Profile setup</b> in four steps: photo, name, which playlists to show, and privacy.</span></li>
+        <li><span><b>Listening now</b>, top artists and recently played, shown to everyone, friends only, or nobody.</span></li>
+        <li><span><b>Friends Mix</b> in Made for You, with who played each song.</span></li>
+      </ul>
+    </div>
+    <div class="stack glow" style="--g:#30d158">
+      <div class="window"><div class="bar"><span></span><span></span><span></span><em>Profile</em></div><img class="zoomable" src="assets/profile.jpg" alt="A profile page" loading="lazy"></div>
+      <div class="window"><img class="zoomable" src="assets/friends-mix.jpg" alt="Friends Mix" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="show flip">
+    <div class="txt">
+      <div class="eyebrow">Lyrics</div>
+      <h2>Sing along, line by line</h2>
+      <p class="lead">Tap <b>Ly</b> and the lyrics fill the screen, lighting up in time with the music. Tap any line to jump there.</p>
+      <ul>
+        <li><span>Reads your <b>.lrc files</b> and lyrics saved in your tags first.</span></li>
+        <li><span>Fills the gaps from <b>LRCLIB</b>, a free and open lyrics database (you can switch it off).</span></li>
+        <li><span>Plus <b>Explicit</b> badges and clean radio stations that skip explicit songs.</span></li>
+      </ul>
+    </div>
+    <div class="glow" style="--g:#ff2d55"><div class="window"><div class="bar"><span></span><span></span><span></span><em>Lyrics</em></div><img class="zoomable" src="assets/lyrics.jpg" alt="Synced lyrics" loading="lazy"></div></div>
   </div>
 </div></section>
 
@@ -157,7 +192,8 @@
   <div class="phones">
     <div class="phone"><img class="zoomable" src="assets/m-radio.jpg" alt="Radio on a phone" loading="lazy"></div>
     <div class="phone"><img class="zoomable" src="assets/m-home.jpg" alt="Home on a phone" loading="lazy"></div>
-    <div class="phone"><img class="zoomable" src="assets/m-rewind.jpg" alt="Weekly Rewind on a phone" loading="lazy"></div>
+    <div class="phone"><img class="zoomable" src="assets/m-lyrics.jpg" alt="Lyrics on a phone" loading="lazy"></div>
+    <div class="phone"><img class="zoomable" src="assets/m-profile.jpg" alt="A profile on a phone" loading="lazy"></div>
   </div>
 </div></section>
 
