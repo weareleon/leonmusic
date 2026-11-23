@@ -691,6 +691,8 @@ body:not(.has-user) .user-only{display:none!important}
 .tp .mx-brand,.tp .mx-logo{z-index:10}
 .mx-logo{position:absolute;right:12px;top:11px;width:30%;max-height:13%;object-fit:contain;object-position:right top;z-index:2}
 .mx.sm .mx-logo{width:34%}
+/* never crop the logo, even inside album-art boxes whose img rules use object-fit:cover */
+.mx img.mx-logo,.tp img.mx-logo{height:auto;object-fit:contain;display:block}
 .mx-foot b{display:block;font-size:9.5px}
 .tp-foot b{display:block;font-size:9.5px;opacity:.9}.tp-foot small{display:block;font-size:9.5px;font-weight:600;opacity:.85;margin-top:1px}
 .tp-album img,.tp-album canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
@@ -774,6 +776,114 @@ body:not(.has-user) .user-only{display:none!important}
 .rw-eoy-banner{cursor:pointer;margin-bottom:34px}
 @media(max-width:1100px){.rw-artists{grid-auto-columns:calc((100% - 40px)/3)}}
 @media(max-width:680px){.rw-artists{grid-auto-columns:44%}.rw-eoy-grid{grid-template-columns:1fr 1fr}.rw-hero,.rw-eoy{padding:22px 18px}}
+/* ── Likes · your playlists · lyrics ── */
+body:not(.can-like) .track-like,body:not(.can-like) #pHeart{display:none}
+.track-like{font-size:15px;width:26px}
+.track-row .track-like:not(.on){opacity:0}.track-row:hover .track-like,.track-like:focus-visible{opacity:1}
+.track-dots{background:none;border:none;color:var(--fg3);font-size:16px;width:28px;height:28px;border-radius:50%;flex-shrink:0;letter-spacing:1px;opacity:0}
+.track-row:hover .track-dots,.track-dots:focus-visible{opacity:1}.track-dots:hover{background:var(--bg4);color:var(--fg)}
+@media(hover:none){.track-row .track-like:not(.on),.track-dots{opacity:1}}
+.p-track .p-heart,.p-lyr{background:none;border:none;color:var(--fg3);font-size:16px;padding:4px;flex-shrink:0;transition:color .15s}
+.p-track .p-heart.on{color:var(--accent)}.p-lyr{font-size:12px;font-weight:800;border:1.5px solid currentColor;border-radius:6px;padding:1px 5px;margin-left:2px}
+.p-lyr:hover,.p-track .p-heart:hover{color:var(--fg)}.p-lyr.on{color:var(--accent)}
+.player.live .p-lyr,.player.live #pHeart{display:none}
+#uplNav .pl-item{display:flex;align-items:center;gap:8px}
+.upl-ico{width:18px;text-align:center;color:var(--fg3);font-size:12px;flex-shrink:0}
+.liked-item .upl-ico{color:var(--accent)}
+.upl-n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.upl-new{display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;color:var(--fg3);font:600 12.5px 'Montserrat',sans-serif;padding:7px 12px;border-radius:8px;text-align:left}
+.upl-new b{width:18px;text-align:center;font-size:15px}.upl-new:hover{color:var(--fg);background:var(--bg3)}
+.nav-sub{font-size:9.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--fg3);padding:10px 12px 4px}
+.liked-art{display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#5b21ff,#bf5af2 55%,#ff5fa2)!important}
+.liked-art span{font-size:64px;color:#fff;text-shadow:0 6px 24px rgba(0,0,0,.25)}
+.upl-cover{display:grid;grid-template-columns:1fr 1fr;width:100%;height:100%}
+.upl-cover img,.upl-cover canvas{width:100%;height:100%;object-fit:cover;display:block}
+.upl-cover.empty{display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--bg4),var(--bg3))}
+.upl-cover.empty span{font-size:46px;color:var(--fg3)}
+.upl-hint{font-size:11.5px;color:var(--fg3);margin:-14px 0 10px}
+.upl-rm{background:none;border:none;color:var(--fg3);font-size:13px;width:28px;height:28px;border-radius:50%;flex-shrink:0;opacity:0}
+.track-row:hover .upl-rm,.upl-rm:focus-visible{opacity:1}.upl-rm:hover{color:var(--accent2);background:var(--bg4)}
+.track-row.dragging{opacity:.45;background:var(--bg3)}
+.track-row[draggable=true]{cursor:grab}
+.upl-lbl{display:block;font-size:11px;font-weight:700;color:var(--fg2);margin:4px 0 6px}.upl-lbl span{font-weight:400;color:var(--fg3)}
+textarea.setup-input{resize:vertical;font-family:inherit;margin-bottom:12px}
+.upl-chk{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px;font-weight:600;margin:4px 0 6px;cursor:pointer}
+.upl-chk input{accent-color:var(--accent);width:16px;height:16px}.upl-chk span{flex-basis:100%;font-size:11.5px;font-weight:500;color:var(--fg3);padding-left:24px}
+.upl-chk.hidden{display:none}
+.upl-pick{display:flex;flex-direction:column;gap:4px;max-height:320px;overflow:auto;margin:6px 0 14px}
+.upl-pick button{display:flex;align-items:center;gap:12px;background:none;border:none;color:var(--fg);text-align:left;padding:6px;border-radius:10px;font-family:inherit}
+.upl-pick button:hover{background:var(--bg3)}
+.upl-pc{width:44px;height:44px;border-radius:6px;overflow:hidden;flex-shrink:0}
+.upl-pick b{display:block;font-size:13px}.upl-pick small{font-size:11px;color:var(--fg2)}
+.lyrics{position:fixed;left:0;right:0;top:0;bottom:var(--player-h);z-index:150;background:#0b0b0d;display:none;flex-direction:column;overflow:hidden}
+.lyrics.on{display:flex;animation:lyin .25s ease}
+@keyframes lyin{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.ly-bg{position:absolute;inset:-15%;background:center/cover;filter:blur(70px) saturate(1.6) brightness(.55);opacity:.9;z-index:0}
+.ly-bg:not([style*="url"]){background:radial-gradient(60% 60% at 30% 30%,color-mix(in srgb,var(--accent) 45%,transparent),transparent 70%)}
+.ly-top{position:relative;z-index:1;display:flex;align-items:center;gap:16px;padding:22px 28px}
+.ly-head{display:flex;align-items:center;gap:14px;flex:1;min-width:0}
+.ly-art{width:56px;height:56px;border-radius:8px;overflow:hidden;flex-shrink:0;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.ly-art img,.ly-art canvas{width:100%;height:100%;object-fit:cover}
+.ly-t{font-size:16px;font-weight:800;color:#fff}.ly-a{font-size:13px;color:rgba(255,255,255,.7)}
+.ly-x{background:rgba(255,255,255,.12);border:none;color:#fff;width:40px;height:40px;border-radius:50%;font-size:18px}
+.ly-x:hover{background:rgba(255,255,255,.22)}
+.ly-scroll{position:relative;z-index:1;flex:1;overflow-y:auto;padding:4vh 28px 40vh;scroll-behavior:smooth;
+  -webkit-mask-image:linear-gradient(transparent,#000 8%,#000 80%,transparent);mask-image:linear-gradient(transparent,#000 8%,#000 80%,transparent)}
+.ly-body{max-width:860px;margin:0 auto}
+.ly-lines p{font-size:clamp(24px,3.4vw,40px);font-weight:800;letter-spacing:-.8px;line-height:1.28;color:rgba(255,255,255,.92);margin:0 0 .55em;text-wrap:balance}
+.ly-lines.synced p{color:rgba(255,255,255,.32);cursor:pointer;transition:color .3s,transform .3s;transform-origin:left center}
+.ly-lines.synced p:hover{color:rgba(255,255,255,.6)}
+.ly-lines.synced p.past{color:rgba(255,255,255,.5)}
+.ly-lines.synced p.now{color:#fff;transform:scale(1.02)}
+.ly-msg{color:rgba(255,255,255,.75);font-size:18px;font-weight:600;text-align:center;padding-top:16vh}
+.ly-src{margin-top:40px;font-size:12px;color:rgba(255,255,255,.5)}.ly-src a{color:rgba(255,255,255,.8)}
+@media(max-width:680px){.ly-top{padding:16px}.ly-scroll{padding:2vh 16px 40vh}}
+.album-extra{margin-top:44px}
+.album-extra .album-art .mx{position:absolute;inset:0;border-radius:0;aspect-ratio:auto;cursor:pointer}
+.album-extra .album-art .pl-mosaic,.album-extra .album-art>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+/* ── Profiles & friends ── */
+.av{width:100%;height:100%;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:22px;aspect-ratio:1}
+.av img{width:100%;height:100%;object-fit:cover}
+.artist-art .av{font-size:44px}
+.uc-av.av{width:30px;height:30px;font-size:13px;flex-shrink:0}
+.user-chip.clickable{cursor:pointer;border-radius:10px}.user-chip.clickable:hover{background:var(--bg3)}
+.pf-hd{display:flex;align-items:center;gap:28px;margin-bottom:26px}
+.pf-av{width:170px;height:170px;flex-shrink:0;box-shadow:0 16px 48px rgba(0,0,0,.45);border-radius:50%}
+.pf-av .av{font-size:68px}
+.pf-name{font-size:clamp(30px,4vw,48px);font-weight:900;letter-spacing:-1.6px;line-height:1.05}
+.pf-user{font-size:13px;color:var(--fg2);margin:6px 0 8px}
+.pf-bio{font-size:14px;color:var(--fg);max-width:560px;margin-bottom:6px}
+.pf-now{display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,color-mix(in srgb,#30d158 16%,var(--bg3)),var(--bg3));border:1px solid var(--border);
+  border-radius:14px;padding:12px 16px;margin-bottom:30px;max-width:560px}
+.pf-dot{width:9px;height:9px;border-radius:50%;background:#30d158;animation:rdpulse 1.6s infinite;flex-shrink:0}
+.pf-now-art{width:48px;height:48px;border-radius:6px;overflow:hidden;flex-shrink:0}.pf-now-art img,.pf-now-art canvas{width:100%;height:100%;object-fit:cover}
+.pf-now div:not([class]){flex:1;min-width:0}.pf-now small{display:block;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#30d158}
+.pf-now b{display:block;font-size:14px}.pf-now span{font-size:12px;color:var(--fg2)}
+.pf-locked{background:var(--bg3);border-radius:12px;padding:14px 16px;font-size:13px;color:var(--fg2);margin-bottom:30px;max-width:560px}
+.pw-you{display:flex;gap:28px;align-items:flex-start}
+.pw-photo{display:flex;flex-direction:column;align-items:center;gap:10px;flex-shrink:0}
+.pw-av{width:140px;height:140px;border-radius:50%;border:none;padding:0;background:none;cursor:pointer}.pw-av .av{font-size:54px}
+.pw-rm{background:none;border:none;color:var(--fg3);font:600 12px 'Montserrat',sans-serif}
+.pw-list{display:flex;flex-direction:column;gap:6px;max-width:520px}
+.pw-row{display:flex;align-items:center;gap:12px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;font-size:14px;font-weight:600;cursor:pointer}
+.pw-row input{accent-color:var(--accent);width:17px;height:17px}.pw-row.liked{margin-top:8px}
+.pw-done{text-align:center;padding-top:6vh}.pw-big{width:150px;height:150px;margin:0 auto 22px}.pw-big .av{font-size:60px}
+.pf-cta{display:flex;align-items:center;gap:18px;border-radius:16px;padding:20px 24px;margin-bottom:34px;background:linear-gradient(120deg,color-mix(in srgb,#0a84ff 30%,var(--bg3)),var(--bg3) 70%)}
+.pf-cta b{display:block;font-size:17px}.pf-cta span{font-size:13px;color:var(--fg2)}.pf-cta div{flex:1}
+.fr-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-top:1px solid var(--border)}
+.fr-row .av{width:48px;height:48px;font-size:18px;cursor:pointer;flex-shrink:0}
+.fr-info{flex:1;min-width:0;cursor:pointer}.fr-info b{display:block;font-size:14px}.fr-info span{font-size:12px;color:var(--fg2)}
+.fr-info em{display:block;font-style:normal;font-size:12px;color:#30d158;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fr-card .fr-mini{margin-top:8px;padding:6px 12px;font-size:11px}
+.trk-friends{color:#30d158}
+@media(max-width:680px){.pf-hd{flex-direction:column;align-items:flex-start;gap:16px}.pf-av{width:120px;height:120px}.pw-you{flex-direction:column;align-items:center}}
+.ebadge{display:inline-flex;align-items:center;justify-content:center;min-width:15px;height:15px;padding:0 3px;margin-left:6px;border-radius:3px;
+  background:color-mix(in srgb,var(--fg) 55%,transparent);color:var(--bg);font:800 9.5px/1 'Montserrat',sans-serif;vertical-align:2px;flex-shrink:0}
+.rd-name .ebadge,.wz-sitem .ebadge{vertical-align:1px}
+.ua-badge{font-size:9.5px;font-weight:800;letter-spacing:.8px;color:var(--accent);margin-left:8px;text-transform:uppercase}
+.wz-explicit{display:flex;align-items:flex-start;gap:12px;font-size:13px;font-weight:600;cursor:pointer}
+.wz-explicit input{accent-color:var(--accent);width:17px;height:17px;margin-top:1px}
+.wz-explicit small{display:block;font-weight:500;color:var(--fg2);font-size:12px;margin-top:2px}
 </style>
 </head>
 <body>
@@ -868,6 +978,10 @@ body:not(.has-user) .user-only{display:none!important}
   <label for="auPw">Password</label><input id="auPw" type="password" autocomplete="current-password" required>
   <div class="au-err" id="auErr" role="alert"></div><button id="auBtn">Log in</button></form></div>
 <div class="ob hidden" id="onboard" role="dialog" aria-modal="true" aria-label="Pick your genres"></div>
+<div class="lyrics" id="lyricsPane" role="dialog" aria-label="Lyrics"><div class="ly-bg" id="lyBg"></div>
+  <div class="ly-top"><div class="ly-head" id="lyHead"></div><button class="ly-x" onclick="toggleLyrics(false)" aria-label="Close lyrics">✕</button></div>
+  <div class="ly-scroll" id="lyScroll"><div class="ly-body" id="lyBody"></div></div></div>
+<div class="wz hidden" id="profWizard" role="dialog" aria-modal="true" aria-label="Profile setup"></div>
 <div id="app">
   <div class="shell">
     <nav class="sidebar">
@@ -879,9 +993,12 @@ body:not(.has-user) .user-only{display:none!important}
         <div class="nav-item" data-view="new"><span class="ico">✦</span>New</div>
         <div class="nav-item" data-view="radio"><span class="ico">◉</span>Radio</div>
         <div class="nav-item" data-view="charts"><span class="ico">▲</span>Charts</div>
+        <div class="nav-item user-only" data-view="friends"><span class="ico">☺</span>Friends</div>
       </div>
       <div class="nav-group">
         <div class="nav-label">Playlists</div>
+        <div id="uplNav"></div>
+        <div class="nav-sub" id="folderSub">From your music folder</div>
         <div id="plNav"></div>
       </div>
       <div class="sidebar-bottom nav-group">
@@ -938,6 +1055,7 @@ body:not(.has-user) .user-only{display:none!important}
             </div>
           </div>
           <div class="track-list" id="detailTracks"></div>
+          <div id="albumExtra" class="album-extra"></div>
         </div>
         <!-- ARTISTS -->
         <div class="view" id="view-artists">
@@ -975,6 +1093,10 @@ body:not(.has-user) .user-only{display:none!important}
         </div>
         <div class="view" id="view-station-schedule"><div id="ssBody"></div></div>
         <div class="view" id="view-mix"><div id="mixBody"></div></div>
+        <div class="view" id="view-liked"><div id="likedBody"></div></div>
+        <div class="view" id="view-profile"><div id="profileBody"></div></div>
+        <div class="view" id="view-friends"><div id="friendsBody"></div></div>
+        <div class="view" id="view-upl"><div id="uplBody"></div></div>
         <!-- NEW -->
         <div class="view" id="view-new"><div id="newBody"></div></div>
         <div class="view" id="view-new-songs"><div class="track-list" id="newSongsList"></div></div>
@@ -1126,6 +1248,8 @@ body:not(.has-user) .user-only{display:none!important}
     <div class="p-track">
       <div class="p-art" id="pArt"></div>
       <div class="p-info"><div class="p-title" id="pTitle">—</div><div class="p-artist" id="pArtist">—</div></div>
+      <button class="p-heart" id="pHeart" onclick="toggleLike(+this.dataset.like)" aria-label="Like" disabled>♡</button>
+      <button class="p-lyr" id="pLyrics" onclick="toggleLyrics()" title="Lyrics" aria-label="Lyrics">Ly</button>
     </div>
     <div class="p-center">
       <div class="p-controls">
@@ -1143,7 +1267,6 @@ body:not(.has-user) .user-only{display:none!important}
       </div>
     </div>
     <div class="p-right">
-      <button class="p-heart" id="pHeart" onclick="this.classList.toggle('on')">♡</button>
       <div class="vol-row">
         <span class="vol-ico">🔈</span>
         <div class="vol-bar" id="volBar" onclick="setVol(event)"><div class="vol-fill" id="volFill"></div></div>
@@ -1231,9 +1354,9 @@ function setAdmin(v){
   const b=document.getElementById('adminLinkBtn');if(b)b.textContent=isAdmin?'⚙ Admin panel':'⚙ Admin login';
 }
 async function checkAdmin(){
-  const t=_tok();if(!t){setAdmin(false);return;}
-  try{const d=await fetch('/api/admin/check',{headers:{'X-Admin-Token':t}}).then(r=>r.json());
-    if(!d.admin){try{localStorage.removeItem('adminToken');}catch(e){}}   // expired / server restarted
+  const t=_tok();
+  try{const d=await fetch('/api/admin/check',t?{headers:{'X-Admin-Token':t}}:undefined).then(r=>r.json());
+    if(!d.admin&&t){try{localStorage.removeItem('adminToken');}catch(e){}}   // expired / server restarted
     setAdmin(d.admin);
   }catch(e){setAdmin(false);}                                           // offline: keep the token, hide the controls
 }
@@ -1296,6 +1419,8 @@ async function initApp(){
 
   // Load playlists nav
   loadPlaylistNav();
+  loadLibraryMine();
+  loadExplicit();
   // Load home data
   loadHome();
   // Restore theme
@@ -1390,25 +1515,28 @@ function renderTrackList(container,tracks,queueRef,showAlbum=false){
   container.innerHTML='';
   if(!tracks.length){container.innerHTML='<div class="empty">No tracks.</div>';return;}
   tracks.forEach((t,i)=>{
-    const row=document.createElement('div');row.className='track-row';
+    const row=document.createElement('div');row.className='track-row';row.dataset.tid=t.id;
     row.innerHTML=`<div class="track-num">${i+1}</div>
       <div class="track-thumb"></div>
       <div class="track-info">
         <div class="track-title">${esc(t.title)}</div>
         <div class="track-artist">${esc(t.artist)}${showAlbum&&t.album?' · '+esc(t.album):''}</div>
       </div>
-      <div class="track-dur">${fmt(t.duration||0)}</div>
-      <button class="track-like" onclick="event.stopPropagation()">♡</button>`;
+      <div class="track-dur">${fmt(t.duration||0)}</div>`;
+    row.appendChild(likeBtn(t));
+    const dots=document.createElement('button');dots.className='track-dots';dots.textContent='···';dots.setAttribute('aria-label','More options');
+    dots.onclick=e=>{e.stopPropagation();openSongMenu(dots,t);};row.appendChild(dots);
     row.querySelector('.track-thumb').appendChild(artEl(t.cover_id,t.id%8,36));
     row.onclick=()=>{playQueue(queueRef,i);};
     container.appendChild(row);
   });
+  syncHearts();
 }
 
 // ═══════════════════════════════════════════════
 //  VIEWS
 // ═══════════════════════════════════════════════
-const viewTitles={search:'Search',home:'Home',new:'New',mix:'Made for You',albums:'Albums',artists:'Artists',songs:'Songs',radio:'Radio',charts:'Charts',settings:'Settings'};
+const viewTitles={search:'Search',home:'Home',profile:'Profile',friends:'Friends',liked:'Liked Songs',upl:'Playlist',new:'New',mix:'Made for You',albums:'Albums',artists:'Artists',songs:'Songs',radio:'Radio',charts:'Charts',settings:'Settings'};
 
 function showView(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -1427,6 +1555,12 @@ function showView(name){
   if(['albums','artists','songs','new-songs'].includes(name))document.querySelector('[data-view="new"]')?.classList.add('active');
   if(name==='new')loadNewView();
   if(name==='search')loadSearchView();
+  if(name==='home'&&_homeMixes)loadForYou();      // refresh mixes (new friends, likes, plays) when coming back
+  if(name==='liked')loadLikedView();
+  if(name==='friends')loadFriendsView();
+  if(name==='profile')document.querySelector('[data-view="friends"]')?.classList.add('active');
+  if(name!=='upl')_uplCur=null;
+  renderUplNav();
   if(name==='mix')loadMixView();
   if(name==='settings')loadUsersAdmin();
   if(name!=='new')closeSongMenu();
@@ -1580,6 +1714,53 @@ async function showAlbumDetail(album){
   const tracks=await api(`/api/tracks?album=${encodeURIComponent(album.album)}`);
   _detailQueue=tracks;
   renderTrackList(document.getElementById('detailTracks'),tracks,_detailQueue,false);
+  loadAlbumExtras(album);
+}
+
+// Featured On · More from <artist> · You may also like
+let _albumExtraFor=null;
+async function loadAlbumExtras(album){
+  const box=document.getElementById('albumExtra');box.innerHTML='';
+  _albumExtraFor=album.album;
+  let d;try{d=await api(`/api/albums/related?album=${encodeURIComponent(album.album)}`);}catch(_){return;}
+  if(_albumExtraFor!==album.album)return;               // opened another album meanwhile
+  const ess=d.essentials.filter(a=>a.forced||(a.track_count>=ESSENTIALS_MIN&&!_NO_ESS.test(a.name)));
+  const cats=d.category||[];
+  if(ess.length||d.featured.length||cats.length){
+    nwSection(box,'Featured On');
+    const r=nwRow(box,'nw-shelf');
+    ess.forEach((a,i)=>{
+      const card=document.createElement('div');card.className='album-card';
+      card.innerHTML=`<div class="album-art ess-art"></div><div class="album-name">${esc(a.name)} Essentials</div>
+        <div class="album-artist">Playlist · ${a.track_count} songs</div>`;
+      const art=card.querySelector('.album-art');art.appendChild(artistArt(a,i,200));art.appendChild(essTint());
+      card.onclick=()=>showArtist(a,true);r.appendChild(card);
+    });
+    d.featured.forEach((p,i)=>{
+      const card=document.createElement('div');card.className='album-card';
+      card.innerHTML=`<div class="album-art"></div><div class="album-name">${esc(plLabel(p.name))}</div>
+        <div class="album-artist">Playlist · ${p.from_album} song${p.from_album===1?'':'s'} from this album</div>`;
+      card.querySelector('.album-art').appendChild(plArt(p,i));
+      card.onclick=()=>showPlaylist(p.name,p.track_count);r.appendChild(card);
+    });
+    cats.forEach(m=>{                                   // genre & decade playlists from Search categories
+      const card=document.createElement('div');card.className='album-card';
+      card.innerHTML=`<div class="album-art"></div><div class="album-name">${esc(m.title)}</div>
+        <div class="album-artist">Playlist · ${m.from_album} song${m.from_album===1?'':'s'} from this album</div>`;
+      card.querySelector('.album-art').appendChild(mixArt(m,d.brand,{big:false}));
+      card.onclick=()=>openMix(m);r.appendChild(card);
+    });
+  }
+  if(d.more.length){
+    nwSection(box,`More from ${album.artist||d.artists[0]||'this artist'}`,()=>{
+      const a=_artists.find(x=>x.name===(album.artist||d.artists[0]));
+      a?showArtist(a,false):api('/api/artists').then(all=>{const x=all.find(y=>y.name===(album.artist||d.artists[0]));if(x)showArtist(x,false);});});
+    renderAlbumGrid(nwRow(box,'nw-shelf'),d.more);
+  }
+  if(d.like.length){
+    nwSection(box,'You May Also Like');
+    renderAlbumGrid(nwRow(box,'nw-shelf'),d.like);
+  }
 }
 
 let _currentPlaylist = '';
@@ -1667,6 +1848,8 @@ function playQueue(q,idx){
   audio.play().catch(()=>{});
   document.getElementById('btnPlay').textContent='⏸';
   updatePlayingRows();
+  syncHearts();
+  if(_ly.open)loadLyrics();
 }
 
 function playAll(){if(queue.length)playQueue(queue,0);}
@@ -1858,7 +2041,7 @@ function renderRadio(){
       t.className='rd-tile'+(s.state&&s.state!=='live'?' off':'')+(radioMode&&radioIdx===i?' on':'');
       t.dataset.rid=s.id;
       t.innerHTML=`<div class="rd-logo"><img src="${esc(s.logo)}" alt="${esc(s.name)}" loading="lazy"></div>
-        <div class="rd-name link" title="See schedule">${esc(s.name)} ›</div>
+        <div class="rd-name link" title="See schedule">${esc(s.name)}${s.explicit?E_BADGE:''} ›</div>
         <div class="rd-now" id="rn-${esc(s.id)}">${esc(nowLine(s))}</div>
         ${s.state==='live'&&s.program&&s.program!=='Rotation'?`<div class="rd-prog show">Now: ${esc(s.program)}</div>`:`<div class="rd-prog">${esc(s.tagline||'')}</div>`}`;
       const logo=t.querySelector('.rd-logo');
@@ -1955,7 +2138,7 @@ function openStationSchedule(s){
   document.getElementById('pageTitle').textContent=`${s.name} Schedule`;
   const body=document.getElementById('ssBody'),i=radioStations.indexOf(s);
   body.innerHTML=`<div class="ss-hd"><img src="${esc(s.logo)}" alt=""><div><div class="detail-type">Live radio</div>
-    <div class="detail-name">${esc(s.name)} Schedule</div><div class="detail-meta">${esc(s.tagline||'')}</div>
+    <div class="detail-name">${esc(s.name)} Schedule${s.explicit?E_BADGE:''}</div><div class="detail-meta">${esc(s.tagline||'')}${s.explicit?' · May contain explicit language':' · Clean: no explicit songs'}</div>
     <div class="detail-btns"><button class="btn-play-big">▶ Listen live</button><button class="btn-shuffle">← Radio</button><button class="btn-shuffle admin-only" id="ssEdit">✎ Edit schedule</button></div></div></div>
     <div class="ss-grid"></div>`;
   body.querySelector('.btn-play-big').onclick=()=>playStation(i);
@@ -2120,7 +2303,7 @@ function wzSchedule(inner,ft){
   const sl=inner.querySelector('#wzSL');
   WZ.stations.forEach((s,i)=>{
     const b=document.createElement('button');b.className='wz-sitem'+(s===st?' on':'');
-    b.innerHTML=`<img src="${wzLogo(s)}" alt=""><span>${esc(s.name)}<small>${(s.blocks||[]).length?`${s.blocks.length} show${s.blocks.length>1?'s':''}`:'Rotation only'}</small></span>`;
+    b.innerHTML=`<img src="${wzLogo(s)}" alt=""><span>${esc(s.name)}${s.explicit!==false?E_BADGE:''}<small>${(s.blocks||[]).length?`${s.blocks.length} show${s.blocks.length>1?'s':''}`:'Rotation only'}</small></span>`;
     b.onclick=()=>{WZ.cur=i;wzRender();};sl.appendChild(b);
   });
   const sp=inner.querySelector('#wzSP');
@@ -2145,10 +2328,14 @@ function wzSchedule(inner,ft){
   };
   const SC=['#ff5a3c','#2b8cff','#b04cff','#18b47b','#ffb31a','#ff3d8b'];
   sp.innerHTML=`<div class="wz-panel" style="margin-top:0">
+      <label class="wz-explicit"><input type="checkbox" id="wzExplicit"${st.explicit!==false?' checked':''}>
+        <span>Allow explicit songs ${E_BADGE}<small>When off, this station skips every song tagged explicit. When on, it plays them and shows an E badge.</small></span></label></div>
+    <div class="wz-panel">
       <div class="wz-sec">Normal rotation</div><div class="wz-sec-sub">Plays whenever no show is on.</div><div id="wzRot"></div></div>
     <div class="wz-panel"><div class="wz-sec">Shows</div><div class="wz-sec-sub">Take over the station at set times. Shows that run past midnight are fine.</div>
       <div id="wzShows"></div><button class="wz-add" id="wzAddShow">+ Add a show</button></div>
     <div class="wz-panel"><div class="wz-sec">Week at a glance</div><div class="wz-sec-sub">Gaps play the normal rotation.</div><div class="wz-week" id="wzWeek"></div></div>`;
+  sp.querySelector('#wzExplicit').onchange=e=>{st.explicit=e.target.checked;wzRender();};
   sp.querySelector('#wzRot').appendChild(chips(st.rotation||(single?[]:['*']),n=>{st.rotation=n;wzRender();}));
   if(single){
     sp.querySelector('.wz-sec').textContent='Christmas playlist';
@@ -2498,8 +2685,12 @@ async function loadUsersAdmin(){
   const list=box.querySelector('#uaList');
   users.forEach(u=>{
     const r=document.createElement('div');r.className='settings-row';
-    r.innerHTML=`<div><div class="settings-label">${esc(u.username)}</div><div class="settings-desc">${u.onboarded?'Likes '+esc(u.genres.length+' genre'+(u.genres.length===1?'':'s')):'Hasn\'t logged in yet'}</div></div>
-      <div style="display:flex;gap:6px"><button class="rd-btn" data-a="pw">Reset password</button><button class="rd-btn" data-a="del">Delete</button></div>`;
+    r.innerHTML=`<div><div class="settings-label">${esc(u.username)}${u.is_admin?'<span class="ua-badge">Admin</span>':''}</div><div class="settings-desc">${u.onboarded?'Likes '+esc(u.genres.length+' genre'+(u.genres.length===1?'':'s')):'Hasn\'t logged in yet'}</div></div>
+      <div style="display:flex;gap:6px"><button class="rd-btn" data-a="adm">${u.is_admin?'Remove admin':'Make admin'}</button><button class="rd-btn" data-a="pw">Reset password</button><button class="rd-btn" data-a="del">Delete</button></div>`;
+    r.querySelector('[data-a=adm]').onclick=async()=>{
+      if(!u.is_admin&&!confirm(`Give ${u.username} full admin rights (settings, users, radio)?`))return;
+      await adminFetch(`/api/admin/users/${u.id}/admin`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({admin:!u.is_admin})});
+      loadUsersAdmin();};
     r.querySelector('[data-a=pw]').onclick=async()=>{
       const pw=prompt(`New password for ${u.username} (8+ characters):`);if(!pw)return;
       const x=await adminFetch(`/api/admin/users/${u.id}/password`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
@@ -2573,7 +2764,13 @@ async function loadForYou(){
   const box=document.getElementById('homeForYou');if(!box)return;
   if(!ME||ME.admin){box.innerHTML='';return;}
   let d;try{d=await api('/api/me/home');}catch(_){return;}
+  if(!_myProfile)await loadMyProfile();
   _homeMixes=d;box.innerHTML='';
+  if(_myProfile&&!_myProfile.profile_done){
+    const c=document.createElement('div');c.className='pf-cta';
+    c.innerHTML=`<div><b>Set up your profile</b><span>Add a photo, choose what to share, and find your friends.</span></div><button class="rd-btn pri">Get started</button>`;
+    c.querySelector('button').onclick=openProfileWizard;box.appendChild(c);
+  }
   const brand=d.brand||document.getElementById('libName').textContent;
   if(d.picks.length){
     nwSection(box,'Top Picks for You');
@@ -2612,6 +2809,8 @@ function renderMixPage(m){
   const a=m.rewind?rewindArt(m.rewind,brand):mixArt(m,brand,{big:false});
   document.getElementById('mixArt').appendChild(a);
   renderTrackList(document.getElementById('mixTracks'),m.tracks,_mixQueue,true);
+  if(m.id==='friends')document.querySelectorAll('#mixTracks .track-row').forEach((r,i)=>{const f=m.tracks[i].friends||[];
+    if(f.length)r.querySelector('.track-artist').insertAdjacentHTML('beforeend',` · <span class="trk-friends">♪ ${esc(f.join(', '))}</span>`);});
   document.getElementById('pageTitle').textContent=m.title;
 }
 
@@ -2831,6 +3030,457 @@ async function openRewind(year,month){
     r.appendChild(c);
   }
 }
+
+// ═══════════════════════════════════════════════
+//  LIKES · YOUR PLAYLISTS · LYRICS
+// ═══════════════════════════════════════════════
+let _liked=new Set(),_canLike=false,_upl={mine:[],shared:[]},_likedQueue=[],_uplQueue=[],_uplCur=null;
+
+async function loadLibraryMine(){
+  try{_liked=new Set((await api('/api/me/likes?ids_only=true')).ids);_canLike=true;}
+  catch(_){_canLike=false;_liked=new Set();}
+  document.body.classList.toggle('can-like',_canLike);
+  await loadUserPlaylists();
+  syncHearts();
+}
+async function loadUserPlaylists(){
+  if(!_canLike){_upl={mine:[],shared:[]};renderUplNav();return;}
+  try{_upl=await api('/api/me/playlists');}catch(_){_upl={mine:[],shared:[]};}
+  renderUplNav();
+}
+function syncHearts(){
+  document.querySelectorAll('[data-like]').forEach(b=>{
+    const on=_liked.has(+b.dataset.like);b.classList.toggle('on',on);b.textContent=on?'♥':'♡';
+    b.setAttribute('aria-pressed',on);b.title=on?'Remove from Liked Songs':'Add to Liked Songs';});
+  const t=!radioMode&&queue[qIdx],ph=document.getElementById('pHeart');
+  if(ph){ph.dataset.like=t?t.id:'';const on=!!t&&_liked.has(t.id);ph.classList.toggle('on',on);ph.textContent=on?'♥':'♡';ph.disabled=!t;}
+}
+async function toggleLike(id){
+  if(!_canLike||!id)return;
+  const on=!_liked.has(id);
+  on?_liked.add(id):_liked.delete(id);syncHearts();
+  try{
+    const r=await fetch(`/api/me/likes/${id}`,{method:on?'POST':'DELETE',headers:{'X-Admin-Token':_tok()}});
+    if(!r.ok)throw 0;
+    toast(on?'Added to Liked Songs':'Removed from Liked Songs');
+  }catch(_){on?_liked.delete(id):_liked.add(id);syncHearts();toast('Could not update Liked Songs');}
+  if(document.getElementById('view-liked').classList.contains('active')&&!on)loadLikedView();
+}
+function likeBtn(t){
+  const b=document.createElement('button');b.className='track-like';b.dataset.like=t.id;
+  b.onclick=e=>{e.stopPropagation();toggleLike(t.id);};return b;
+}
+
+// ── Sidebar ──
+function uplCoverEl(p,size){
+  const w=document.createElement('div');w.className='upl-cover';
+  if(p.covers&&p.covers.length){for(let k=0;k<4;k++)w.appendChild(artEl(p.covers[k%p.covers.length],k,size||80));}
+  else{w.classList.add('empty');w.innerHTML='<span>♫</span>';}
+  return w;
+}
+function renderUplNav(){
+  const nav=document.getElementById('uplNav');if(!nav)return;
+  nav.innerHTML='';
+  if(!_canLike){nav.style.display='none';return;}
+  nav.style.display='';
+  const cur=document.getElementById('view-upl')?.classList.contains('active')?_uplCur:null;
+  const item=(label,ico,on,fn,cls='')=>{const el=document.createElement('div');el.className='pl-item '+cls+(on?' active':'');
+    el.innerHTML=`<span class="upl-ico">${ico}</span><span class="upl-n">${esc(label)}</span>`;el.onclick=fn;nav.appendChild(el);return el;};
+  item('Liked Songs','♥',document.getElementById('view-liked')?.classList.contains('active'),()=>showView('liked'),'liked-item');
+  _upl.mine.forEach(p=>item(p.name,'♫',cur===p.id,()=>openUserPlaylist(p.id)));
+  _upl.shared.forEach(p=>item(p.name,'⇄',cur===p.id,()=>openUserPlaylist(p.id),'shared-item').title=`Shared by ${p.owner}`);
+  const add=document.createElement('button');add.className='upl-new';add.innerHTML='<b>+</b> New playlist';
+  add.onclick=()=>newPlaylistPrompt();nav.appendChild(add);
+}
+
+// ── Liked Songs page ──
+async function loadLikedView(){
+  const b=document.getElementById('likedBody');
+  b.innerHTML='<div class="loading"><div class="spinner"></div></div>';
+  let d;try{d=await api('/api/me/likes');}catch(_){b.innerHTML='<div class="empty">Log in with your account to keep Liked Songs.</div>';return;}
+  _likedQueue=d.tracks;
+  b.innerHTML=`<div class="album-detail-hd"><div class="detail-art liked-art"><span>♥</span></div><div>
+    <div class="detail-type">Playlist</div><div class="detail-name">Liked Songs</div>
+    <div class="detail-meta">${d.tracks.length} song${d.tracks.length===1?'':'s'} · ${fmtDur(d.tracks.reduce((s,t)=>s+(t.duration||0),0))||'0 min'}</div>
+    <div class="detail-btns"><button class="btn-play-big" onclick="playQueue(_likedQueue,0)"${d.tracks.length?'':' disabled'}>▶ Play</button>
+      <button class="btn-shuffle" onclick="shuffleQueue(_likedQueue)"${d.tracks.length?'':' disabled'}>⇌ Shuffle</button>
+      <button class="btn-shuffle" onclick="newPlaylistPrompt(_likedQueue.map(t=>t.id),'Liked Songs copy')"${d.tracks.length?'':' disabled'}>＋ Save as playlist</button></div></div></div>
+    <div class="track-list" id="likedTracks"></div>`;
+  if(!d.tracks.length){document.getElementById('likedTracks').innerHTML='<div class="empty">Tap ♡ on any song to add it here.</div>';return;}
+  renderTrackList(document.getElementById('likedTracks'),_likedQueue,_likedQueue,true);
+}
+
+// ── Your playlists ──
+function newPlaylistPrompt(trackIds,suggest){
+  plModal({title:'New playlist',name:suggest||'',desc:'',shared:false,submit:'Create',onSave:async(v)=>{
+    const r=await fetch('/api/me/playlists',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_tok()},
+      body:JSON.stringify({...v,track_ids:trackIds||[]})});
+    const d=await r.json();if(!r.ok)throw new Error(d.detail||'Could not create');
+    await loadUserPlaylists();openUserPlaylist(d.id);
+    toast(trackIds&&trackIds.length?`Created with ${trackIds.length} song${trackIds.length===1?'':'s'}`:'Playlist created');
+  }});
+}
+function plModal({title,name,desc,shared,submit,onSave,onDelete}){
+  const wrap=document.createElement('div');wrap.className='cover-modal';wrap.setAttribute('role','dialog');wrap.setAttribute('aria-modal','true');
+  wrap.innerHTML=`<form class="cover-card" style="max-width:420px">
+      <div class="cover-title">${esc(title)}</div>
+      <label class="upl-lbl" for="uplName">Name</label><input class="setup-input" id="uplName" maxlength="60" required value="${esc(name)}">
+      <label class="upl-lbl" for="uplDesc">Description <span>(optional)</span></label><textarea class="setup-input" id="uplDesc" maxlength="300" rows="3">${esc(desc)}</textarea>
+      <label class="upl-chk ${_auth()?'':'hidden'}"><input type="checkbox" id="uplShared"${shared?' checked':''}> Share with everyone on this server <span>They can listen, but only you can edit.</span></label>
+      <div class="setup-error" id="uplErr"></div>
+      <div class="cover-actions">${onDelete?'<button type="button" class="btn-secondary upl-del">Delete</button>':''}<span style="flex:1"></span>
+        <button type="button" class="btn-secondary upl-cancel">Cancel</button><button class="btn-primary">${esc(submit)}</button></div></form>`;
+  document.body.appendChild(wrap);
+  const close=()=>wrap.remove();
+  wrap.querySelector('.upl-cancel').onclick=close;
+  wrap.addEventListener('click',e=>{if(e.target===wrap)close();});
+  wrap.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
+  if(onDelete)wrap.querySelector('.upl-del').onclick=async()=>{if(confirm('Delete this playlist? This can\'t be undone.')){close();await onDelete();}};
+  wrap.querySelector('form').onsubmit=async e=>{e.preventDefault();
+    const btn=wrap.querySelector('.btn-primary');btn.disabled=true;
+    try{await onSave({name:wrap.querySelector('#uplName').value,description:wrap.querySelector('#uplDesc').value,shared:wrap.querySelector('#uplShared').checked});close();}
+    catch(x){wrap.querySelector('#uplErr').textContent=x.message;btn.disabled=false;}};
+  setTimeout(()=>{const i=wrap.querySelector('#uplName');i.focus();i.select();},30);
+}
+function _auth(){return !!(ME||isAdmin);}   // sharing only makes sense with accounts
+
+async function openUserPlaylist(id){
+  _uplCur=id;showView('upl');renderUplNav();
+  const b=document.getElementById('uplBody');b.innerHTML='<div class="loading"><div class="spinner"></div></div>';
+  let p;try{p=await api(`/api/me/playlists/${id}`);}catch(_){b.innerHTML='<div class="empty">This playlist isn\'t available.</div>';return;}
+  _uplQueue=p.tracks;
+  document.getElementById('pageTitle').textContent=p.name;
+  b.innerHTML=`<div class="album-detail-hd"><div class="detail-art" id="uplArt"></div><div>
+    <div class="detail-type">${p.mine?(p.shared?'Shared playlist':'Your playlist'):'Shared by '+esc(p.owner)}</div>
+    <div class="detail-name">${esc(p.name)}</div>
+    ${p.description?`<div class="detail-artist">${esc(p.description)}</div>`:''}
+    <div class="detail-meta">${p.tracks.length} song${p.tracks.length===1?'':'s'}${p.tracks.length?' · '+fmtDur(p.tracks.reduce((s,t)=>s+(t.duration||0),0)):''}</div>
+    <div class="detail-btns"><button class="btn-play-big" onclick="playQueue(_uplQueue,0)"${p.tracks.length?'':' disabled'}>▶ Play</button>
+      <button class="btn-shuffle" onclick="shuffleQueue(_uplQueue)"${p.tracks.length?'':' disabled'}>⇌ Shuffle</button>
+      ${p.mine?'<button class="btn-shuffle" id="uplEdit">✎ Edit</button>':`<button class="btn-shuffle" id="uplCopy">＋ Save a copy</button>`}</div></div></div>
+    ${p.mine&&p.tracks.length>1?'<div class="upl-hint">Drag songs to reorder.</div>':''}
+    <div class="track-list" id="uplTracks"></div>`;
+  b.querySelector('#uplArt').appendChild(uplCoverEl(p,160));
+  if(p.mine)b.querySelector('#uplEdit').onclick=()=>plModal({title:'Edit playlist',name:p.name,desc:p.description,shared:p.shared,submit:'Save',
+    onSave:async v=>{const r=await fetch(`/api/me/playlists/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json','X-Admin-Token':_tok()},body:JSON.stringify(v)});
+      if(!r.ok)throw new Error((await r.json()).detail||'Could not save');await loadUserPlaylists();openUserPlaylist(id);},
+    onDelete:async()=>{await fetch(`/api/me/playlists/${id}`,{method:'DELETE',headers:{'X-Admin-Token':_tok()}});_uplCur=null;await loadUserPlaylists();showView('home');toast('Playlist deleted');}});
+  else b.querySelector('#uplCopy').onclick=()=>newPlaylistPrompt(p.tracks.map(t=>t.id),p.name);
+  const list=b.querySelector('#uplTracks');
+  if(!p.tracks.length){list.innerHTML=`<div class="empty">${p.mine?'No songs yet. Use ··· → <b>Add to playlist</b> on any song.':'This playlist is empty.'}</div>`;return;}
+  renderTrackList(list,_uplQueue,_uplQueue,true);
+  if(!p.mine)return;
+  // remove buttons + drag to reorder
+  [...list.querySelectorAll('.track-row')].forEach((row,i)=>{
+    const t=p.tracks[i];row.dataset.entry=t.entry;row.draggable=true;
+    const x=document.createElement('button');x.className='upl-rm';x.textContent='✕';x.title='Remove from playlist';
+    x.onclick=async e=>{e.stopPropagation();
+      await fetch(`/api/me/playlists/${id}/tracks/${t.entry}`,{method:'DELETE',headers:{'X-Admin-Token':_tok()}});
+      await loadUserPlaylists();openUserPlaylist(id);};
+    row.appendChild(x);
+    row.addEventListener('dragstart',e=>{row.classList.add('dragging');e.dataTransfer.effectAllowed='move';});
+    row.addEventListener('dragend',async()=>{row.classList.remove('dragging');
+      const order=[...list.querySelectorAll('.track-row')].map(r=>+r.dataset.entry);
+      if(order.join()===p.tracks.map(t=>t.entry).join())return;
+      await fetch(`/api/me/playlists/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json','X-Admin-Token':_tok()},body:JSON.stringify({order})});
+      openUserPlaylist(id);});
+  });
+  list.addEventListener('dragover',e=>{e.preventDefault();const drag=list.querySelector('.dragging');if(!drag)return;
+    const after=[...list.querySelectorAll('.track-row:not(.dragging)')].find(r=>e.clientY<r.getBoundingClientRect().top+r.offsetHeight/2);
+    after?list.insertBefore(drag,after):list.appendChild(drag);});
+}
+
+// "Add to playlist" picker (from the ··· menu or the player)
+function addToPlaylistPicker(trackIds){
+  if(!_canLike)return toast('Log in with your account to use playlists');
+  const wrap=document.createElement('div');wrap.className='cover-modal';wrap.setAttribute('role','dialog');wrap.setAttribute('aria-modal','true');
+  wrap.innerHTML=`<div class="cover-card" style="max-width:400px"><div class="cover-title">Add to playlist</div>
+    <div class="upl-pick">${_upl.mine.map(p=>`<button data-id="${p.id}"><span class="upl-pc"></span><span><b>${esc(p.name)}</b><small>${p.count} songs</small></span></button>`).join('')||'<div class="settings-desc" style="padding:8px 0">You don\'t have any playlists yet.</div>'}</div>
+    <div class="cover-actions"><button class="btn-secondary upl-cancel">Cancel</button><span style="flex:1"></span><button class="btn-primary upl-newbtn">＋ New playlist</button></div></div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelectorAll('.upl-pick button').forEach((b,i)=>b.querySelector('.upl-pc').appendChild(uplCoverEl(_upl.mine[i],40)));
+  const close=()=>wrap.remove();
+  wrap.querySelector('.upl-cancel').onclick=close;
+  wrap.addEventListener('click',e=>{if(e.target===wrap)close();});
+  wrap.querySelector('.upl-newbtn').onclick=()=>{close();newPlaylistPrompt(trackIds);};
+  wrap.querySelectorAll('.upl-pick button').forEach(b=>b.onclick=async()=>{
+    const r=await fetch(`/api/me/playlists/${b.dataset.id}/tracks`,{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_tok()},body:JSON.stringify({track_ids:trackIds})});
+    const d=await r.json();close();
+    toast(!r.ok?'Could not add':d.added?`Added to ${_upl.mine.find(p=>p.id==b.dataset.id).name}`:'Already in that playlist');
+    loadUserPlaylists();
+  });
+}
+
+// ── Lyrics ──
+let _ly={open:false,trackId:null,lines:[],cur:-1};
+function toggleLyrics(force){
+  const pane=document.getElementById('lyricsPane');
+  _ly.open=force===undefined?!_ly.open:force;
+  pane.classList.toggle('on',_ly.open);document.getElementById('pLyrics').classList.toggle('on',_ly.open);
+  if(_ly.open)loadLyrics();
+}
+async function loadLyrics(){
+  const t=!radioMode&&queue[qIdx],body=document.getElementById('lyBody'),hd=document.getElementById('lyHead'),bg=document.getElementById('lyBg');
+  if(!t){hd.innerHTML='';body.innerHTML='<div class="ly-msg">Play a song to see its lyrics.</div>';return;}
+  if(_ly.trackId===t.id&&body.dataset.ready)return;
+  _ly={..._ly,trackId:t.id,lines:[],cur:-1};body.dataset.ready='';
+  hd.innerHTML=`<div class="ly-art"></div><div><div class="ly-t">${esc(t.title)}</div><div class="ly-a">${esc(t.artist||'')}</div></div>`;
+  hd.querySelector('.ly-art').appendChild(artEl(t.cover_id,t.id%8,80));
+  bg.style.backgroundImage=t.cover_id?`url(/api/cover/${t.cover_id})`:'';
+  body.innerHTML='<div class="ly-msg"><div class="spinner" style="margin:0 auto 14px"></div>Finding lyrics…</div>';
+  let d;try{d=await api(`/api/lyrics/${t.id}`);}catch(_){d={found:false,error:'x'};}
+  if(_ly.trackId!==t.id)return;                 // song changed while loading
+  body.dataset.ready='1';
+  const src=d.source==='lrclib'?'<div class="ly-src">Lyrics from <a href="https://lrclib.net" target="_blank" rel="noopener">LRCLIB</a></div>':'';
+  if(d.instrumental&&!d.synced.length&&!d.plain){body.innerHTML='<div class="ly-msg">♪ Instrumental ♪</div>'+src;return;}
+  if(!d.found){body.innerHTML=`<div class="ly-msg">${d.disabled?'No lyrics saved for this song. Online lyrics lookup is turned off in the admin panel.'
+    :d.error?'Couldn\'t reach the lyrics service. Try again later.':'No lyrics found for this song.'}</div>`;return;}
+  if(d.synced.length){
+    _ly.lines=d.synced;
+    body.innerHTML=`<div class="ly-lines synced">${d.synced.map((l,i)=>`<p data-i="${i}">${esc(l.text)||'♪'}</p>`).join('')}</div>${src}`;
+    body.querySelectorAll('p').forEach(p=>p.onclick=()=>{audio.currentTime=_ly.lines[+p.dataset.i].t;audio.play().catch(()=>{});});
+    syncLyrics(true);
+  }else{
+    body.innerHTML=`<div class="ly-lines">${d.plain.split('\n').map(l=>`<p>${esc(l)||'&nbsp;'}</p>`).join('')}</div>${src}`;
+  }
+}
+function syncLyrics(jump){
+  if(!_ly.open||!_ly.lines.length)return;
+  const ct=audio.currentTime+0.25;
+  let i=-1;for(let k=0;k<_ly.lines.length;k++){if(_ly.lines[k].t<=ct)i=k;else break;}
+  if(i===_ly.cur&&!jump)return;
+  _ly.cur=i;
+  const ps=document.querySelectorAll('#lyBody .ly-lines p');
+  ps.forEach((p,k)=>{p.classList.toggle('now',k===i);p.classList.toggle('past',k<i);});
+  const el=ps[Math.max(0,i)];
+  if(el){const box=document.getElementById('lyScroll');box.scrollTo({top:el.offsetTop-box.clientHeight*0.38,behavior:jump?'auto':'smooth'});}
+}
+audio.addEventListener('timeupdate',()=>syncLyrics(false));
+audio.addEventListener('seeked',()=>syncLyrics(true));
+audio.addEventListener('play',()=>{syncHearts();if(_ly.open)loadLyrics();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&_ly.open)toggleLyrics(false);});
+
+// ═══════════════════════════════════════════════
+//  PROFILES & FRIENDS
+// ═══════════════════════════════════════════════
+let _myProfile=null,_profQueue=[],_profRecentQueue=[],PW=null;
+const VIS_LABEL={everyone:'Everyone on this server',friends:'Only my friends',private:'Only me'};
+
+function avatarEl(u,cls='av'){
+  const d=document.createElement('div');d.className=cls==='av'?'av':'av '+cls;   // always keep the base avatar sizing
+  if(u&&u.avatar){const i=document.createElement('img');i.src=u.avatar;i.alt='';d.appendChild(i);}
+  else{const n=(u&&(u.display_name||u.username))||'?';let h=0;for(const c of n)h=(h*31+c.charCodeAt(0))|0;
+    d.style.background=`linear-gradient(135deg,hsl(${Math.abs(h)%360},75%,55%),hsl(${(Math.abs(h)+50)%360},80%,45%))`;
+    d.textContent=n.trim()[0]?.toUpperCase()||'?';}
+  return d;
+}
+async function loadMyProfile(){
+  if(!ME||ME.admin){_myProfile=null;return null;}
+  try{_myProfile=await api('/api/me/profile');}catch(_){_myProfile=null;}
+  renderUserChip();return _myProfile;
+}
+// Sidebar chip: photo + name, click = your profile
+const _origUserChip=renderUserChip;
+renderUserChip=function(){
+  _origUserChip();
+  if(!ME||ME.admin||!_myProfile)return;
+  const box=document.getElementById('userChip');
+  const av=box.querySelector('.uc-av');av.replaceWith(avatarEl({..._myProfile},'uc-av'));
+  box.querySelector('.uc-name').innerHTML=`${esc(_myProfile.display_name||_myProfile.username)}<small>@${esc(_myProfile.username)}</small>`;
+  box.classList.add('clickable');box.title='Your profile';
+  box.onclick=e=>{if(!e.target.closest('.uc-out'))openProfile(_myProfile.username);};
+};
+
+// ── Setup wizard ──
+function openProfileWizard(){
+  if(!_myProfile)return;
+  PW={step:0,d:{..._myProfile,public_playlists:_myProfile.playlists.filter(p=>p.shared).map(p=>p.id)},err:''};
+  document.getElementById('profWizard').classList.remove('hidden');pwRender();
+}
+function closeProfileWizard(){document.getElementById('profWizard').classList.add('hidden');}
+const PW_STEPS=['You','Playlists','Privacy','Done'];
+function pwRender(){
+  const el=document.getElementById('profWizard'),s=PW.step,d=PW.d;
+  el.innerHTML=`<div class="wz-hd"><div class="wz-title">👤 ${_myProfile.profile_done?'Edit profile':'Set up your profile'}</div>
+      <div class="wz-steps">${PW_STEPS.map((n,i)=>`<div class="wz-step${i===s?' on':i<s?' done':''}"><b>${i<s?'✓':i+1}</b><span>${n}</span></div>`).join('')}</div>
+      <button class="wz-x" aria-label="Close" onclick="closeProfileWizard()">✕</button></div>
+    <div class="wz-body"><div class="wz-inner" id="pwInner" style="max-width:720px"></div></div><div class="wz-ft" id="pwFt"></div>`;
+  const inner=el.querySelector('#pwInner'),ft=el.querySelector('#pwFt');
+  const foot=(next,onNext,back=s>0)=>{ft.innerHTML=`${back?'<button class="rd-btn" id="pwBack">← Back</button>':''}<div class="sp${PW.err?' err':''}">${esc(PW.err)}</div>
+      <button class="rd-btn pri" id="pwNext">${next}</button>`;
+    if(back)ft.querySelector('#pwBack').onclick=()=>{PW.err='';PW.step--;pwRender();};ft.querySelector('#pwNext').onclick=onNext;};
+  if(s===0){
+    inner.innerHTML=`<div class="wz-h">Who are you?</div><div class="wz-sub">This is how people on ${esc(document.getElementById('libName').textContent)} see you.</div>
+      <div class="pw-you"><div class="pw-photo"><button class="pw-av" id="pwAv" aria-label="Change photo"></button>
+        <button class="rd-btn" id="pwPick">Upload photo</button>${d.avatar?'<button class="pw-rm" id="pwRm">Remove</button>':''}</div>
+      <div style="flex:1;min-width:0">
+        <div class="wz-f"><label for="pwName">Display name</label><input class="wz-in" id="pwName" maxlength="40" placeholder="${esc(d.username)}" value="${esc(d.display_name)}"></div>
+        <div class="wz-f"><label for="pwUser">Username</label><input class="wz-in" id="pwUser" maxlength="32" value="${esc(d.username)}">
+          <span class="hint">Friends find you with this. It's also what you log in with.</span></div>
+        <div class="wz-f"><label for="pwBio">Bio</label><textarea class="wz-in" id="pwBio" maxlength="200" rows="3" placeholder="Music I can't stop playing…">${esc(d.bio)}</textarea></div>
+      </div></div>`;
+    inner.querySelector('#pwAv').appendChild(avatarEl(d,'av'));
+    const pick=()=>{const i=document.createElement('input');i.type='file';i.accept='image/*';i.onchange=()=>{const f=i.files[0];if(!f)return;const img=new Image();
+      img.onload=()=>{const c=document.createElement('canvas');c.width=c.height=256;const k=Math.min(img.width,img.height);
+        c.getContext('2d').drawImage(img,(img.width-k)/2,(img.height-k)/2,k,k,0,0,256,256);d.avatar=c.toDataURL('image/jpeg',.85);URL.revokeObjectURL(img.src);read();pwRender();};
+      img.src=URL.createObjectURL(f);};i.click();};
+    const read=()=>{d.display_name=inner.querySelector('#pwName').value;d.username=inner.querySelector('#pwUser').value.trim();d.bio=inner.querySelector('#pwBio').value;};
+    inner.querySelector('#pwPick').onclick=pick;inner.querySelector('#pwAv').onclick=pick;
+    const rm=inner.querySelector('#pwRm');if(rm)rm.onclick=()=>{read();d.avatar='';pwRender();};
+    foot('Continue →',()=>{read();if(!/^[A-Za-z0-9_.\-]{2,32}$/.test(d.username)){PW.err='Username: 2–32 letters, numbers, dots, dashes or underscores.';return pwRender();}
+      PW.err='';PW.step=1;pwRender();});
+  }else if(s===1){
+    inner.innerHTML=`<div class="wz-h">What should your profile show?</div><div class="wz-sub">Public playlists appear on your profile and in everyone's sidebar. Others can play them, but only you can edit.</div>
+      <div class="pw-list">${d.playlists.length?d.playlists.map(p=>`<label class="pw-row"><input type="checkbox" data-id="${p.id}"${d.public_playlists.includes(p.id)?' checked':''}>
+        <span>♫ ${esc(p.name)}</span></label>`).join(''):'<div class="settings-desc">You haven\'t made any playlists yet. You can make some later and share them from the playlist\'s Edit button.</div>'}
+      <label class="pw-row liked"><input type="checkbox" id="pwLikes"${d.likes_public?' checked':''}><span>♥ Liked Songs</span></label></div>`;
+    foot('Continue →',()=>{d.public_playlists=[...inner.querySelectorAll('[data-id]')].filter(x=>x.checked).map(x=>+x.dataset.id);
+      d.likes_public=inner.querySelector('#pwLikes').checked;PW.step=2;pwRender();});
+  }else if(s===2){
+    inner.innerHTML=`<div class="wz-h">Your listening</div><div class="wz-sub">Choose who can see what you're playing now, what you played recently and your top artists. Friends who can see it also get your songs in their <b>Friends Mix</b>.</div>
+      <div class="pw-list">${Object.entries(VIS_LABEL).map(([k,l])=>`<label class="pw-row"><input type="radio" name="pwVis" value="${k}"${d.activity_vis===k?' checked':''}><span>${l}</span></label>`).join('')}</div>
+      <label class="wz-chk" style="margin-top:18px"><input type="checkbox" id="pwTop"${d.show_top?' checked':''}> Show my top artists and songs this month</label>`;
+    foot('Save profile',async()=>{d.activity_vis=inner.querySelector('[name=pwVis]:checked').value;d.show_top=inner.querySelector('#pwTop').checked;
+      const btn=document.getElementById('pwNext');btn.disabled=true;btn.textContent='Saving…';
+      const r=await fetch('/api/me/profile',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        display_name:d.display_name,username:d.username,bio:d.bio,avatar:d.avatar,activity_vis:d.activity_vis,show_top:d.show_top,
+        likes_public:d.likes_public,public_playlists:d.public_playlists,profile_done:true})});
+      const res=await r.json();
+      if(!r.ok){PW.err=res.detail||'Could not save';PW.step=res.detail&&/sername/.test(res.detail)?0:2;return pwRender();}
+      _myProfile=res;ME.username=res.username;renderUserChip();loadUserPlaylists();PW.step=3;pwRender();});
+  }else{
+    inner.innerHTML=`<div class="pw-done"><div class="pw-big"></div><div class="wz-h">You're all set${d.display_name?', '+esc(d.display_name.split(' ')[0]):''}!</div>
+      <div class="wz-sub" style="margin:0 auto 22px">Add friends to see what they're listening to and get a Friends Mix in Made for You.</div></div>`;
+    inner.querySelector('.pw-big').appendChild(avatarEl(_myProfile,'av'));
+    ft.innerHTML=`<button class="rd-btn" id="pwFriends">Find friends</button><div class="sp"></div><button class="rd-btn pri" id="pwOpen">View my profile</button>`;
+    ft.querySelector('#pwOpen').onclick=()=>{closeProfileWizard();openProfile(_myProfile.username);};
+    ft.querySelector('#pwFriends').onclick=()=>{closeProfileWizard();showView('friends');};
+  }
+}
+
+// ── Profile page ──
+function friendButton(p,refresh){
+  const b=document.createElement('button');b.className='btn-play-big';
+  const set=(t,cls)=>{b.textContent=t;b.className=cls;};
+  const map={none:['＋ Add friend','btn-play-big'],outgoing:['Request sent','btn-shuffle'],incoming:['✓ Accept request','btn-play-big'],friends:['✓ Friends','btn-shuffle']};
+  set(...map[p.relation]);
+  b.onclick=async()=>{
+    if(p.relation==='friends'&&!confirm(`Remove ${p.display_name} from your friends?`))return;
+    const del=p.relation==='friends'||p.relation==='outgoing';
+    const r=await fetch(`/api/me/friends/${encodeURIComponent(p.username)}`,{method:del?'DELETE':'POST'});
+    const d=await r.json();p.relation=d.relation;set(...map[p.relation]);
+    toast({friends:'You\'re now friends 🎉',outgoing:'Friend request sent',none:del?'Removed':'Done'}[p.relation]||'Done');
+    if(refresh)refresh();
+  };
+  return b;
+}
+async function openProfile(username){
+  showView('profile');
+  const b=document.getElementById('profileBody');b.innerHTML='<div class="loading"><div class="spinner"></div></div>';
+  let p;try{p=await api(`/api/users/${encodeURIComponent(username)}`);}catch(_){b.innerHTML='<div class="empty">Profile not found.</div>';return;}
+  document.getElementById('pageTitle').textContent=p.display_name;
+  const self=p.relation==='self';
+  b.innerHTML=`<div class="pf-hd"><div class="pf-av"></div><div class="pf-info">
+      <div class="detail-type">Profile</div><div class="pf-name">${esc(p.display_name)}</div>
+      <div class="pf-user">@${esc(p.username)} · ${p.friends.length} friend${p.friends.length===1?'':'s'}${p.month_minutes!=null?` · ${p.month_minutes.toLocaleString()} min this month`:''}</div>
+      ${p.bio?`<div class="pf-bio">${esc(p.bio)}</div>`:''}
+      <div class="detail-btns" id="pfBtns"></div></div></div>
+    ${p.now?`<div class="pf-now"><span class="pf-dot"></span><div class="pf-now-art"></div><div><small>Listening now</small><b>${esc(p.now.title)}</b><span>${esc(p.now.artist||'')}</span></div><button class="rd-btn" id="pfNowPlay">▶ Play</button></div>`:''}
+    <div id="pfSecs"></div>`;
+  b.querySelector('.pf-av').appendChild(avatarEl(p,'av'));
+  const btns=b.querySelector('#pfBtns');
+  if(self){const e=document.createElement('button');e.className='btn-shuffle';e.textContent='✎ Edit profile';e.onclick=openProfileWizard;btns.appendChild(e);}
+  else btns.appendChild(friendButton(p));
+  if(p.now){b.querySelector('.pf-now-art').appendChild(artEl(p.now.cover_id,p.now.id%8,56));b.querySelector('#pfNowPlay').onclick=()=>playQueue([p.now],0);}
+  const secs=b.querySelector('#pfSecs');
+  if(p.activity_hidden){secs.insertAdjacentHTML('beforeend',`<div class="pf-locked">🔒 ${esc(p.display_name)} keeps their listening private${p.relation==='friends'?'':'. If you become friends, they may share it with you'}.</div>`);}
+  if(p.top_artists.length){
+    nwSection(secs,'Top artists this month');const r=nwRow(secs,'nw-shelf artists');
+    p.top_artists.forEach((a,i)=>{const c=document.createElement('div');c.className='artist-card';
+      c.innerHTML=`<div class="artist-art"></div><div class="artist-name">${esc(a.name)}</div><div class="artist-count">${a.minutes} min</div>`;
+      const img=document.createElement('img');img.src=picUrl(a.name);img.alt='';img.loading='lazy';img.onerror=()=>img.replaceWith(artEl(a.cover_id,i,120));
+      c.querySelector('.artist-art').appendChild(img);
+      c.onclick=async()=>{const x=(await api('/api/artists')).find(y=>y.name===a.name);if(x)showArtist(x,false);};r.appendChild(c);});
+  }
+  if(p.top_songs.length){nwSection(secs,'Top songs this month');_profQueue=p.top_songs;rankedSongs(nwRow(secs,'nw-songs'),_profQueue);}
+  if(p.recent.length){nwSection(secs,'Recently played');_profRecentQueue=p.recent;renderSongGrid(nwRow(secs,'nw-songs'),_profRecentQueue,false);}
+  if(p.playlists.length||(p.likes_public&&p.likes_count)){
+    nwSection(secs,self?'Your public playlists':'Public playlists');const r=nwRow(secs,'nw-shelf');
+    if(p.likes_public&&p.likes_count){const c=document.createElement('div');c.className='album-card';
+      c.innerHTML=`<div class="album-art liked-art" style="display:flex;align-items:center;justify-content:center"><span style="font-size:54px;color:#fff">♥</span></div>
+        <div class="album-name">Liked Songs</div><div class="album-artist">${p.likes_count} songs</div>`;
+      c.onclick=()=>openProfileLikes(p);r.appendChild(c);}
+    p.playlists.forEach(pl=>{const c=document.createElement('div');c.className='album-card';
+      c.innerHTML=`<div class="album-art"></div><div class="album-name">${esc(pl.name)}</div><div class="album-artist">${pl.count} songs</div>`;
+      c.querySelector('.album-art').appendChild(uplCoverEl(pl,140));c.onclick=()=>openUserPlaylist(pl.id);r.appendChild(c);});
+  }
+  if(p.friends.length){
+    nwSection(secs,'Friends');const r=nwRow(secs,'nw-shelf artists');
+    p.friends.forEach(f=>{const c=document.createElement('div');c.className='artist-card';
+      c.innerHTML=`<div class="artist-art"></div><div class="artist-name">${esc(f.display_name)}</div><div class="artist-count">@${esc(f.username)}</div>`;
+      c.querySelector('.artist-art').appendChild(avatarEl(f,'av'));c.onclick=()=>openProfile(f.username);r.appendChild(c);});
+  }
+  if(!secs.children.length)secs.innerHTML=`<div class="empty">${self?'Play some music and it will show up here.':'Nothing to show yet.'}</div>`;
+}
+async function openProfileLikes(p){
+  const d=await api(`/api/users/${encodeURIComponent(p.username)}/likes`);
+  openMix({id:'plikes',title:`${p.display_name}'s Liked Songs`,sub:`Songs ${p.display_name} loves`,colors:['#5b21ff','#bf5af2','#ff5fa2','#3b0fa8'],artists:[],tracks:d.tracks});
+}
+
+// ── Friends page ──
+let _frSearchT=null;
+async function loadFriendsView(){
+  const b=document.getElementById('friendsBody');
+  b.innerHTML=`<label class="big-search"><span>⌕</span><input id="frSearch" type="search" placeholder="Find people on ${esc(document.getElementById('libName').textContent)}…" autocomplete="off" aria-label="Find people"></label>
+    <div id="frResults"></div><div id="frLists"><div class="loading"><div class="spinner"></div></div></div>`;
+  const inp=b.querySelector('#frSearch');
+  inp.oninput=()=>{clearTimeout(_frSearchT);_frSearchT=setTimeout(()=>frSearch(inp.value),200);};
+  frSearch('');
+  let d;try{d=await api('/api/me/friends');}catch(_){b.querySelector('#frLists').innerHTML='<div class="empty">Log in with your own account to add friends.</div>';return;}
+  const L=b.querySelector('#frLists');L.innerHTML='';
+  const row=(u,extra)=>{const el=document.createElement('div');el.className='fr-row';
+    el.appendChild(avatarEl(u,'av'));
+    el.insertAdjacentHTML('beforeend',`<div class="fr-info"><b>${esc(u.display_name)}</b><span>@${esc(u.username)}</span>${u.now?`<em>▶ ${esc(u.now.title)} · ${esc(u.now.artist||'')}</em>`:''}</div>`);
+    el.querySelector('.fr-info').onclick=()=>openProfile(u.username);el.querySelector('.av').onclick=()=>openProfile(u.username);
+    if(extra)el.appendChild(extra);return el;};
+  if(d.incoming.length){nwSection(L,'Friend requests');d.incoming.forEach(u=>L.appendChild(row(u,friendButton({...u,relation:'incoming'},loadFriendsView))));}
+  nwSection(L,`Your friends${d.friends.length?' · '+d.friends.length:''}`);
+  if(!d.friends.length)L.insertAdjacentHTML('beforeend','<div class="settings-desc" style="padding:4px 0 24px">No friends yet. Search above or pick someone below.</div>');
+  d.friends.sort((a,b)=>!!b.now-!!a.now).forEach(u=>L.appendChild(row(u)));
+  if(d.outgoing.length){nwSection(L,'Sent requests');d.outgoing.forEach(u=>L.appendChild(row(u,friendButton({...u,relation:'outgoing'},loadFriendsView))));}
+}
+async function frSearch(q){
+  const box=document.getElementById('frResults');if(!box)return;
+  let list=[];try{list=await api(`/api/users?q=${encodeURIComponent(q)}`);}catch(_){return;}
+  if(!q.trim())list=list.filter(u=>u.relation==='none').slice(0,12);
+  box.innerHTML='';if(!list.length){if(q.trim())box.innerHTML='<div class="settings-desc" style="padding-bottom:20px">No one found.</div>';return;}
+  nwSection(box,q.trim()?'People':'People you may know');
+  const r=nwRow(box,'nw-shelf artists');
+  list.forEach(u=>{const c=document.createElement('div');c.className='artist-card fr-card';
+    c.innerHTML=`<div class="artist-art"></div><div class="artist-name">${esc(u.display_name)}</div><div class="artist-count">@${esc(u.username)}</div>`;
+    c.querySelector('.artist-art').appendChild(avatarEl(u,'av'));c.onclick=e=>{if(!e.target.closest('button'))openProfile(u.username);};
+    if(u.relation!=='self'){const fb=friendButton(u,loadFriendsView);fb.classList.add('fr-mini');c.appendChild(fb);}
+    r.appendChild(c);});
+}
+
+// ═══════════════════════════════════════════════
+//  EXPLICIT BADGES
+// ═══════════════════════════════════════════════
+let _explicit=new Set();
+const E_BADGE='<span class="ebadge" title="Explicit" aria-label="Explicit">E</span>';
+async function loadExplicit(){try{_explicit=new Set((await api('/api/explicit')).ids);}catch(_){}markExplicit();}
+function markExplicit(){
+  if(!_explicit.size&&!document.querySelector('.ebadge'))return;
+  const tag=(el,id)=>{if(!el)return;const has=el.querySelector(':scope>.ebadge');
+    if(_explicit.has(+id)){if(!has)el.insertAdjacentHTML('beforeend',E_BADGE);}else if(has)has.remove();};
+  document.querySelectorAll('.track-row[data-tid]').forEach(r=>tag(r.querySelector('.track-title'),r.dataset.tid));
+  document.querySelectorAll('.nw-song[data-id]').forEach(r=>tag(r.querySelector('.nw-song-t'),r.dataset.id));
+  const t=!radioMode&&queue[qIdx];tag(document.getElementById('pTitle'),t?t.id:-1);
+  const lt=document.querySelector('#lyHead .ly-t');if(lt)tag(lt,_ly.trackId||-1);
+}
+let _eT=null;
+new MutationObserver(()=>{clearTimeout(_eT);_eT=setTimeout(markExplicit,60);})
+  .observe(document.getElementById('app'),{childList:true,subtree:true});
 
 // ═══════════════════════════════════════════════
 //  NEW
@@ -3067,6 +3717,8 @@ function openSongMenu(anchor,t){
     ['▶','Play',()=>playQueue([t],0)],
     ['↪','Play next',()=>{if(nothingPlaying)return playQueue([t],0);queue=queue.slice();queue.splice(qIdx+1,0,t);toast('Playing next');}],
     ['≡','Add to queue',()=>{if(nothingPlaying)return playQueue([t],0);queue=[...queue,t];toast('Added to queue');}],
+    ...(_canLike?[[_liked.has(t.id)?'♥':'♡',_liked.has(t.id)?'Remove from Liked Songs':'Add to Liked Songs',()=>toggleLike(t.id)],
+                  ['＋','Add to playlist…',()=>addToPlaylistPicker([t.id])]]:[]),
     ['◫','Go to album',async()=>{if(!t.album)return;const all=await api('/api/albums');const a=all.find(x=>x.album===t.album);if(a)showAlbumDetail(a);}],
     ['♬','Go to artist',async()=>{const all=await api('/api/artists');const a=all.find(x=>x.name===t.artist)||all.find(x=>(t.artist||'').startsWith(x.name));if(a)showArtist(a,false);}],
   ];
@@ -3204,7 +3856,7 @@ function renderChartList(container,tracks){
   container.innerHTML='';
   if(!tracks.length){container.innerHTML='<div class="empty">No tracks.</div>';return;}
   tracks.forEach((t,i)=>{
-    const row=document.createElement('div');row.className='track-row chart-row';
+    const row=document.createElement('div');row.className='track-row chart-row';row.dataset.tid=t.id;
     row.innerHTML=`<div class="track-num">${t.rank}</div>`;
     row.appendChild(moveEl(t));
     const rest=document.createElement('template');

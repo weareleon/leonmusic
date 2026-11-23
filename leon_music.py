@@ -302,6 +302,7 @@ def init_db():
     """)
     db.commit()
     db.close()
+    _init_explicit()
 
 # ── Tag reader ────────────────────────────────────────────────────────────────
 def read_tags(path: Path) -> dict:
@@ -426,6 +427,7 @@ def scan_library():
                     tags["year"], tags["genre"], tags["duration"], tags["bitrate"],
                     fpath.stat().st_size, cover_id, playlist, mtime,
                 ))
+                db.execute("UPDATE tracks SET explicit=? WHERE path=?", (_explicit_flag(fpath, tags["title"]), str(fpath)))
                 found += 1
                 state["scan_found"] = found
                 state["scan_file"]  = fname
@@ -654,7 +656,20 @@ def api_stream(track_id: int, request: Request):
 # ── Admin auth helper ─────────────────────────────────────────────────────────
 def _is_admin(req: Request) -> bool:
     token = req.headers.get("X-Admin-Token", "")
-    return bool(token) and token in _admin_tokens
+    if token and token in _admin_tokens:
+        return True
+    sess = req.cookies.get("lm_session", "")
+    if not sess:
+        return False
+    db = get_db()
+    try:
+        r = db.execute("""SELECT s.user_id, COALESCE(u.is_admin,0) FROM sessions s LEFT JOIN users u ON u.id=s.user_id
+                          WHERE s.token=? AND s.expires>?""", (sess, _now())).fetchone()
+    except sqlite3.OperationalError:
+        r = None
+    finally:
+        db.close()
+    return bool(r) and (r[0] == 0 or r[1] == 1)
 
 def _require_admin(req: Request):
     if not _is_admin(req):
@@ -697,6 +712,7 @@ def api_admin_get(req: Request):
         "hero_image":    state["hero_image"],
         "hero_tint":     state["hero_tint"],
         "artist_pics_online": state["artist_pics_online"],
+        "lyrics_online": state.get("lyrics_online", True),
         "forced_essentials": state["forced_essentials"],
         "cover_logo_cfg":      state["cover_logo_cfg"],
         "cover_text_pos":      state["cover_text_pos"],
@@ -725,6 +741,9 @@ async def api_admin_set(req: Request):
     if "artist_pics_online" in body:
         v = bool(body["artist_pics_online"])
         c["artist_pics_online"] = v; state["artist_pics_online"] = v
+    if "lyrics_online" in body:
+        v = bool(body["lyrics_online"])
+        c["lyrics_online"] = v; state["lyrics_online"] = v
     if "cover_logo_cfg" in body:
         raw = body["cover_logo_cfg"]
         if not isinstance(raw, dict):
@@ -1266,13 +1285,15 @@ def _current_program(st: dict, now=None):
             return b.get("name") or "Scheduled show", b["playlists"]
     return "Rotation", st.get("rotation") or ["*"]
 
-def _pool(playlists: list) -> list:
+def _pool(playlists: list, allow_explicit: bool = True) -> list:
     db = get_db()
-    q = "SELECT id,path,title,artist,album,duration,cover_id FROM tracks"
+    q = "SELECT id,path,title,artist,album,duration,cover_id FROM tracks WHERE 1=1"
     p: list = []
     if playlists and "*" not in playlists:
-        q += f" WHERE playlist IN ({','.join('?' * len(playlists))})"
+        q += f" AND playlist IN ({','.join('?' * len(playlists))})"
         p = list(playlists)
+    if not allow_explicit:
+        q += " AND COALESCE(explicit,0)=0"
     rows = [dict(r) for r in db.execute(q, p).fetchall()]
     db.close()
     if not FFMPEG:                                 # without ffmpeg we can only pass MP3 through
@@ -1411,9 +1432,10 @@ class _Caster(threading.Thread):
 
     def _next_track(self, st):
         program, playlists = _current_program(st)
-        pool = _pool(playlists)
+        clean = st.get("explicit", True) is False
+        pool = _pool(playlists, not clean)
         if not pool and playlists != ["*"]:
-            pool = _pool(["*"])                      # scheduled playlist empty: fall back to library
+            pool = _pool(["*"], not clean)           # scheduled playlist empty: fall back to library
         if not pool:
             raise IcecastError("No playable songs in this station's playlists", slow=True)
         recent = set(self.recent[-min(len(pool) - 1, 50):]) if len(pool) > 1 else set()
@@ -1519,6 +1541,7 @@ def _public_station(st: dict, ice: dict) -> dict:
             "tagline": st.get("tagline", ""), "genre": st.get("tagline", ""), "url": url,
             "relay": _is_loopback(url), "logo": f"/api/broadcast/{st['id']}/logo.svg?v={st.get('rev', 0)}",
             "c1": st.get("c1"), "c2": st.get("c2"), "template": st.get("template", ""),
+            "explicit": st.get("explicit", True) is not False,
             "rotation": st.get("rotation") or ["*"], "blocks": st.get("blocks") or [],
             "state": s.get("state", "stopped"), "now": s.get("now"), "program": s.get("program")}
 
@@ -1655,6 +1678,7 @@ async def api_bc_save(req: Request):
             "c1": _clean_color(raw.get("c1")) or (tpl or {}).get("c1", "#e5282a"),
             "c2": _clean_color(raw.get("c2")) or (tpl or {}).get("c2", "#ff7a1a"),
             "mount": mount, "enabled": raw.get("enabled", True) is not False,
+            "explicit": raw.get("explicit", True) is not False,
             "rotation": _pl(raw.get("rotation")) or ["*"], "blocks": blocks,
             "rev": int(prev.get("rev", 0)) + 1})
     cfg_all["broadcast"] = {"live": bool(stations) and body.get("live", True) is not False,
@@ -2499,7 +2523,7 @@ def api_users_list(req: Request):
     _require_admin(req)
     db = get_db()
     rows = [dict(r) for r in db.execute(
-        "SELECT id,username,onboarded,genres,created_at FROM users ORDER BY username").fetchall()]
+        "SELECT id,username,onboarded,genres,created_at,COALESCE(is_admin,0) AS is_admin FROM users ORDER BY username").fetchall()]
     db.close()
     for r in rows:
         r["genres"] = json.loads(r["genres"] or "[]")
@@ -2541,8 +2565,11 @@ async def api_users_reset(uid: int, req: Request):
 def api_users_delete(uid: int, req: Request):
     _require_admin(req)
     db = get_db()
-    for t in ("sessions", "user_mixes"):
+    for t in ("sessions", "user_mixes", "likes"):
         db.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))
+    db.execute("DELETE FROM friends WHERE user_id=? OR friend_id=?", (uid, uid))
+    db.execute("DELETE FROM user_playlist_tracks WHERE playlist_id IN (SELECT id FROM user_playlists WHERE user_id=?)", (uid,))
+    db.execute("DELETE FROM user_playlists WHERE user_id=?", (uid,))
     db.execute("DELETE FROM users WHERE id=?", (uid,))
     db.commit(); db.close()
     _auth_cache["users"] = None
@@ -2656,6 +2683,7 @@ _MIX_STYLES = {   # gradient blobs (c1, c2, c3, base)
     "getup":   ["#ffcc00", "#ff2d2d", "#ff7a00", "#d61f1f"],
     "chill":   ["#00c2a8", "#0a84ff", "#30d158", "#0e7490"],
     "mine":    ["#ff375f", "#bf5af2", "#ff9f0a", "#7c3aed"],
+    "friends": ["#30d158", "#0a84ff", "#64d2ff", "#1e3a8a"],
 }
 
 def _ensure_play_user_col():
@@ -2739,6 +2767,7 @@ def api_me_home(req: Request):
     saved = db.execute("SELECT name,track_ids FROM user_mixes WHERE user_id=? ORDER BY id DESC LIMIT 1", (u["id"],)).fetchone()
     if saved:
         mixes.append(mk("mine", saved["name"], json.loads(saved["track_ids"] or "[]"), "Your genre mix"))
+    mixes.append(_friends_mix(db, u["id"], mk))
     mixes = [m for m in mixes if m]
 
     # Top Picks — only once there's enough listening history to be meaningful
@@ -2993,6 +3022,756 @@ def api_me_rewind_playlists(req: Request):
     db.close()
     return out
 
+# ── Likes, user playlists and lyrics ──────────────────────────────────────────
+def init_library_feats_db():
+    db = get_db()
+    db.executescript("""
+        CREATE TABLE IF NOT EXISTS likes (
+            user_id INTEGER NOT NULL, track_id INTEGER NOT NULL, created REAL NOT NULL,
+            PRIMARY KEY (user_id, track_id)
+        );
+        CREATE TABLE IF NOT EXISTS user_playlists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL,
+            description TEXT DEFAULT '', shared INTEGER DEFAULT 0, created REAL, updated REAL
+        );
+        CREATE TABLE IF NOT EXISTS user_playlist_tracks (
+            playlist_id INTEGER NOT NULL, track_id INTEGER NOT NULL, pos REAL NOT NULL, added REAL
+        );
+        CREATE INDEX IF NOT EXISTS idx_upt ON user_playlist_tracks(playlist_id, pos);
+        CREATE TABLE IF NOT EXISTS lyrics (
+            track_id INTEGER PRIMARY KEY, synced TEXT, plain TEXT, source TEXT,
+            instrumental INTEGER DEFAULT 0, found INTEGER DEFAULT 0, fetched REAL
+        );
+    """)
+    db.commit(); db.close()
+
+init_library_feats_db()
+state.setdefault("lyrics_online", load_config().get("lyrics_online", True))
+
+def _me_id(req: Request) -> int:
+    """Whose likes/playlists: the account (admin = 0); on an open, account-less server everyone is the owner (0)."""
+    u = _session_user(req)
+    if u:
+        return u["id"]
+    if _is_admin(req) or not _lib_locked():
+        return 0
+    raise HTTPException(401, "Log in with your own account to use likes and playlists")
+
+_TRACK_SEL = "t.id,t.title,t.artist,t.album,t.duration,t.cover_id,t.year,t.genre"
+
+# ── Likes ──
+@api.get("/api/me/likes")
+def api_likes(req: Request, ids_only: bool = False):
+    uid = _me_id(req)
+    db = get_db()
+    if ids_only:
+        ids = [r[0] for r in db.execute("SELECT track_id FROM likes WHERE user_id=?", (uid,))]
+        db.close()
+        return {"ids": ids}
+    rows = [dict(r) for r in db.execute(
+        f"SELECT {_TRACK_SEL}, l.created AS liked_at FROM likes l JOIN tracks t ON t.id=l.track_id "
+        "WHERE l.user_id=? ORDER BY l.created DESC", (uid,))]
+    db.close()
+    return {"tracks": rows}
+
+@api.post("/api/me/likes/{track_id}")
+def api_like(track_id: int, req: Request):
+    uid = _me_id(req)
+    db = get_db()
+    if not db.execute("SELECT 1 FROM tracks WHERE id=?", (track_id,)).fetchone():
+        db.close(); raise HTTPException(404)
+    db.execute("INSERT OR IGNORE INTO likes(user_id,track_id,created) VALUES(?,?,?)", (uid, track_id, _now()))
+    db.commit(); db.close()
+    return {"liked": True}
+
+@api.delete("/api/me/likes/{track_id}")
+def api_unlike(track_id: int, req: Request):
+    uid = _me_id(req)
+    db = get_db(); db.execute("DELETE FROM likes WHERE user_id=? AND track_id=?", (uid, track_id)); db.commit(); db.close()
+    return {"liked": False}
+
+# ── User playlists ──
+def _owner_name(db, uid: int) -> str:
+    if uid == 0:
+        return "admin" if _auth_required() else state["name"]
+    r = db.execute("SELECT username FROM users WHERE id=?", (uid,)).fetchone()
+    return r[0] if r else "someone"
+
+def _pl_summary(db, row, me: int) -> dict:
+    d = dict(row)
+    d["count"] = db.execute("SELECT COUNT(*) FROM user_playlist_tracks WHERE playlist_id=?", (d["id"],)).fetchone()[0]
+    d["covers"] = [r[0] for r in db.execute(
+        """SELECT t.cover_id FROM user_playlist_tracks p JOIN tracks t ON t.id=p.track_id
+           WHERE p.playlist_id=? AND t.cover_id IS NOT NULL GROUP BY t.cover_id ORDER BY MIN(p.pos) LIMIT 4""", (d["id"],))]
+    d["owner"] = _owner_name(db, d["user_id"])
+    d["mine"] = d["user_id"] == me
+    d["shared"] = bool(d["shared"])
+    return d
+
+def _get_pl(db, pid: int, me: int, write=False):
+    r = db.execute("SELECT * FROM user_playlists WHERE id=?", (pid,)).fetchone()
+    if not r or (r["user_id"] != me and (write or not r["shared"])):
+        db.close(); raise HTTPException(404, "Playlist not found")
+    return r
+
+@api.get("/api/me/playlists")
+def api_my_playlists(req: Request):
+    me = _me_id(req)
+    db = get_db()
+    mine = [_pl_summary(db, r, me) for r in db.execute(
+        "SELECT * FROM user_playlists WHERE user_id=? ORDER BY updated DESC", (me,))]
+    shared = [_pl_summary(db, r, me) for r in db.execute(
+        "SELECT * FROM user_playlists WHERE shared=1 AND user_id<>? ORDER BY updated DESC", (me,))]
+    db.close()
+    return {"mine": mine, "shared": shared}
+
+def _clean_pl_name(v) -> str:
+    v = re.sub(r"\s+", " ", str(v or "")).strip()[:60]
+    if not v:
+        raise HTTPException(400, "Give the playlist a name")
+    return v
+
+@api.post("/api/me/playlists")
+async def api_pl_create(req: Request):
+    me = _me_id(req)
+    body = await req.json()
+    name = _clean_pl_name(body.get("name"))
+    db = get_db()
+    if db.execute("SELECT COUNT(*) FROM user_playlists WHERE user_id=?", (me,)).fetchone()[0] >= 500:
+        db.close(); raise HTTPException(400, "That's a lot of playlists. Delete some first")
+    cur = db.execute("INSERT INTO user_playlists(user_id,name,description,shared,created,updated) VALUES(?,?,?,?,?,?)",
+                     (me, name, str(body.get("description") or "")[:300], 1 if body.get("shared") else 0, _now(), _now()))
+    pid = cur.lastrowid
+    ids = [int(i) for i in (body.get("track_ids") or []) if str(i).isdigit()][:5000]
+    for n, tid in enumerate(ids):
+        db.execute("INSERT INTO user_playlist_tracks(playlist_id,track_id,pos,added) VALUES(?,?,?,?)", (pid, tid, n, _now()))
+    db.commit(); db.close()
+    return {"id": pid}
+
+@api.get("/api/me/playlists/{pid}")
+def api_pl_get(pid: int, req: Request):
+    me = _me_id(req)
+    db = get_db()
+    r = _get_pl(db, pid, me)
+    d = _pl_summary(db, r, me)
+    d["tracks"] = [dict(x) for x in db.execute(
+        f"SELECT {_TRACK_SEL}, p.rowid AS entry FROM user_playlist_tracks p JOIN tracks t ON t.id=p.track_id "
+        "WHERE p.playlist_id=? ORDER BY p.pos", (pid,))]
+    db.close()
+    return d
+
+@api.patch("/api/me/playlists/{pid}")
+async def api_pl_edit(pid: int, req: Request):
+    me = _me_id(req)
+    body = await req.json()
+    db = get_db()
+    _get_pl(db, pid, me, write=True)
+    if "name" in body:
+        db.execute("UPDATE user_playlists SET name=? WHERE id=?", (_clean_pl_name(body["name"]), pid))
+    if "description" in body:
+        db.execute("UPDATE user_playlists SET description=? WHERE id=?", (str(body["description"] or "")[:300], pid))
+    if "shared" in body:
+        db.execute("UPDATE user_playlists SET shared=? WHERE id=?", (1 if body["shared"] else 0, pid))
+    if isinstance(body.get("order"), list):          # list of entry ids in their new order
+        for n, entry in enumerate(body["order"][:5000]):
+            db.execute("UPDATE user_playlist_tracks SET pos=? WHERE rowid=? AND playlist_id=?", (n, int(entry), pid))
+    db.execute("UPDATE user_playlists SET updated=? WHERE id=?", (_now(), pid))
+    db.commit(); db.close()
+    return {"status": "ok"}
+
+@api.delete("/api/me/playlists/{pid}")
+def api_pl_delete(pid: int, req: Request):
+    me = _me_id(req)
+    db = get_db()
+    _get_pl(db, pid, me, write=True)
+    db.execute("DELETE FROM user_playlist_tracks WHERE playlist_id=?", (pid,))
+    db.execute("DELETE FROM user_playlists WHERE id=?", (pid,))
+    db.commit(); db.close()
+    return {"status": "ok"}
+
+@api.post("/api/me/playlists/{pid}/tracks")
+async def api_pl_add(pid: int, req: Request):
+    me = _me_id(req)
+    body = await req.json()
+    ids = [int(i) for i in (body.get("track_ids") or []) if str(i).isdigit()][:5000]
+    db = get_db()
+    _get_pl(db, pid, me, write=True)
+    have = {r[0] for r in db.execute("SELECT track_id FROM user_playlist_tracks WHERE playlist_id=?", (pid,))}
+    top = db.execute("SELECT COALESCE(MAX(pos),-1) FROM user_playlist_tracks WHERE playlist_id=?", (pid,)).fetchone()[0]
+    added = 0
+    for tid in ids:
+        if tid in have and not body.get("allow_duplicates"):
+            continue
+        top += 1; added += 1; have.add(tid)
+        db.execute("INSERT INTO user_playlist_tracks(playlist_id,track_id,pos,added) VALUES(?,?,?,?)", (pid, tid, top, _now()))
+    db.execute("UPDATE user_playlists SET updated=? WHERE id=?", (_now(), pid))
+    db.commit(); db.close()
+    return {"added": added, "skipped": len(ids) - added}
+
+@api.delete("/api/me/playlists/{pid}/tracks/{entry}")
+def api_pl_remove(pid: int, entry: int, req: Request):
+    me = _me_id(req)
+    db = get_db()
+    _get_pl(db, pid, me, write=True)
+    db.execute("DELETE FROM user_playlist_tracks WHERE rowid=? AND playlist_id=?", (entry, pid))
+    db.execute("UPDATE user_playlists SET updated=? WHERE id=?", (_now(), pid))
+    db.commit(); db.close()
+    return {"status": "ok"}
+
+# ── Lyrics: .lrc file → embedded tags → LRCLIB (lrclib.net, free & open) ──
+_LRC_LINE = re.compile(r"\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]")
+LRCLIB_UA = "leon.music (https://github.com/weareleon/leonmusic)"
+
+def _parse_lrc(text: str) -> list:
+    out = []
+    for raw in (text or "").splitlines():
+        stamps = list(_LRC_LINE.finditer(raw))
+        if not stamps:
+            continue
+        words = _LRC_LINE.sub("", raw).strip()
+        for m in stamps:
+            frac = m.group(3) or "0"
+            t = int(m.group(1)) * 60 + int(m.group(2)) + int(frac) / (10 ** len(frac))
+            out.append({"t": round(t, 2), "text": words})
+    return sorted(out, key=lambda x: x["t"])
+
+def _embedded_lyrics(path: Path) -> str:
+    try:
+        f = MutagenFile(str(path))
+        if f is None or not f.tags:
+            return ""
+        tags = f.tags
+        for k in list(tags.keys()):
+            if str(k).startswith("USLT"):
+                return str(tags[k].text)
+        for k in ("LYRICS", "lyrics", "UNSYNCEDLYRICS", "\xa9lyr"):
+            if k in tags:
+                v = tags[k]
+                return str(v[0] if isinstance(v, list) else v)
+    except Exception:
+        pass
+    return ""
+
+def _lrclib_lookup(artist: str, title: str, album: str, duration) -> Optional[dict]:
+    def get(url):
+        req = urllib.request.Request(url, headers={"User-Agent": LRCLIB_UA})
+        try:
+            with urllib.request.urlopen(req, timeout=8) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            raise
+    q = {"artist_name": artist, "track_name": title}
+    if album:
+        q["album_name"] = album
+    if duration:
+        q["duration"] = int(round(duration))
+    hit = get("https://lrclib.net/api/get?" + _urlencode(q))
+    if hit:
+        return hit
+    res = get("https://lrclib.net/api/search?" + _urlencode({"artist_name": artist, "track_name": title})) or []
+    if duration:
+        res = [r for r in res if r.get("duration") and abs(r["duration"] - duration) <= 4] or res[:0]
+    return next((r for r in res if r.get("syncedLyrics")), None) or (res[0] if res else None)
+
+@api.get("/api/lyrics/{track_id}")
+def api_lyrics(track_id: int):
+    db = get_db()
+    t = db.execute("SELECT path,title,artist,album,duration FROM tracks WHERE id=?", (track_id,)).fetchone()
+    db.close()
+    if not t:
+        raise HTTPException(404)
+    def answer(synced_txt, plain, source, instrumental=False):
+        synced = _parse_lrc(synced_txt) if synced_txt else []
+        if not synced and plain and _LRC_LINE.search(plain):       # plain text that is really LRC
+            synced, plain = _parse_lrc(plain), _LRC_LINE.sub("", plain)
+        return {"found": bool(synced or plain or instrumental), "synced": synced,
+                "plain": (plain or "").strip(), "source": source, "instrumental": bool(instrumental)}
+    # 1) a .lrc file next to the song
+    path = Path(t["path"])
+    lrc = path.with_suffix(".lrc")
+    if lrc.exists():
+        try:
+            return answer(lrc.read_text(encoding="utf-8", errors="replace"), "", "file")
+        except Exception:
+            pass
+    # 2) lyrics saved in the file's tags
+    emb = _embedded_lyrics(path)
+    if emb.strip():
+        return answer("", emb, "tags")
+    # 3) cached LRCLIB result (misses are retried after a week)
+    db = get_db()
+    c = db.execute("SELECT * FROM lyrics WHERE track_id=?", (track_id,)).fetchone()
+    if c and (c["found"] or _now() - (c["fetched"] or 0) < 7 * 86400):
+        db.close()
+        return answer(c["synced"], c["plain"], c["source"], c["instrumental"]) if c["found"] else \
+            {"found": False, "synced": [], "plain": "", "source": None, "instrumental": False}
+    db.close()
+    if not state.get("lyrics_online", True):
+        return {"found": False, "synced": [], "plain": "", "source": None, "instrumental": False, "disabled": True}
+    if not (t["artist"] and t["title"]):
+        return {"found": False, "synced": [], "plain": "", "source": None, "instrumental": False}
+    try:
+        hit = _lrclib_lookup(t["artist"], t["title"], t["album"] or "", t["duration"])
+    except Exception:
+        return {"found": False, "synced": [], "plain": "", "source": None, "instrumental": False, "error": "unreachable"}
+    db = get_db()
+    db.execute("INSERT OR REPLACE INTO lyrics(track_id,synced,plain,source,instrumental,found,fetched) VALUES(?,?,?,?,?,?,?)",
+               (track_id, (hit or {}).get("syncedLyrics") or "", (hit or {}).get("plainLyrics") or "", "lrclib",
+                1 if (hit or {}).get("instrumental") else 0, 1 if hit else 0, _now()))
+    db.commit(); db.close()
+    if not hit:
+        return {"found": False, "synced": [], "plain": "", "source": None, "instrumental": False}
+    return answer(hit.get("syncedLyrics") or "", hit.get("plainLyrics") or "", "lrclib", hit.get("instrumental"))
+
+# ── Album page extras: Featured On, More from…, You may also like ────────────
+_ALBUM_COLS = """album, COALESCE(album_artist,artist) AS artist, MAX(year) AS year, COUNT(*) AS track_count,
+                 SUM(duration) AS total_duration, MIN(cover_id) AS cover_id"""
+
+@api.get("/api/albums/related")
+def api_album_related(album: str):
+    db = get_db()
+    rows = [dict(r) for r in db.execute(
+        "SELECT id,genre,year,playlist,COALESCE(album_artist,artist) AS a FROM tracks WHERE album=?", (album,))]
+    if not rows:
+        db.close(); raise HTTPException(404, "Unknown album")
+    artists = sorted({r["a"] for r in rows if r["a"]})
+    # Featured on: folder playlists holding songs from this album
+    featured = []
+    for name in sorted({r["playlist"] for r in rows if r["playlist"]}):
+        n_in = sum(1 for r in rows if r["playlist"] == name)
+        tot = db.execute("SELECT COUNT(*) FROM tracks WHERE playlist=?", (name,)).fetchone()[0]
+        covers = [c[0] for c in db.execute(
+            """SELECT cover_id FROM tracks WHERE playlist=? AND cover_id IS NOT NULL
+               GROUP BY cover_id ORDER BY COUNT(*) DESC LIMIT 4""", (name,))]
+        featured.append({"name": name, "display_name": state["playlist_names"].get(name, name),
+                         "track_count": tot, "from_album": n_in, "covers": covers,
+                         "has_cover": (COVERS_DIR / f"{_safe_name(name)}.jpg").exists()})
+    # …and the album artists' Essentials (the page decides which artists qualify, same rule as the Artists page)
+    ess = [dict(r) for r in db.execute(
+        f"""SELECT COALESCE(album_artist,artist) AS name, COUNT(DISTINCT album) AS album_count, COUNT(*) AS track_count,
+                   MIN(cover_id) AS cover_id FROM tracks
+            WHERE COALESCE(album_artist,artist) IN ({','.join('?' * len(artists))}) GROUP BY name""", artists)] if artists else []
+    forced = {n.lower() for n in state["forced_essentials"]}
+    for e in ess:
+        e["forced"] = e["name"].lower() in forced
+    # More from the album's artist(s)
+    more = [dict(r) for r in db.execute(
+        f"""SELECT {_ALBUM_COLS} FROM tracks
+            WHERE COALESCE(album_artist,artist) IN ({','.join('?' * len(artists))}) AND album<>? AND album IS NOT NULL AND album<>''
+            GROUP BY album ORDER BY MAX(year) DESC, album""", artists + [album])] if artists else []
+    # You may also like: other artists' albums sharing a genre, nudged by era and popularity
+    keys = {_genre_parts(r["genre"])[0] for r in rows} - {None}
+    years = [r["year"] for r in rows if r["year"]]
+    yr = sorted(years)[len(years) // 2] if years else None
+    plays = {r[0]: r[1] for r in db.execute("SELECT track_id, COUNT(*) FROM plays GROUP BY track_id")}
+    cand: dict = {}
+    for r in db.execute("SELECT id,album,genre,year,COALESCE(album_artist,artist) AS a FROM tracks "
+                        "WHERE album IS NOT NULL AND album<>'' AND album<>?", (album,)):
+        if r["a"] in artists:
+            continue
+        c = cand.setdefault(r["album"], {"genre": 0, "plays": 0, "years": []})
+        if _genre_parts(r["genre"])[0] in keys:
+            c["genre"] += 1
+        c["plays"] += plays.get(r["id"], 0)
+        if r["year"]:
+            c["years"].append(r["year"])
+    def score(c):
+        era = 0
+        if yr and c["years"]:
+            gap = abs(sorted(c["years"])[len(c["years"]) // 2] - yr)
+            era = 2 if gap <= 5 else 1 if gap <= 12 else 0
+        return (c["genre"] > 0) * 10 + era + min(c["plays"], 50) / 25
+    picks = [a for a, c in sorted(cand.items(), key=lambda kv: -score(kv[1]))][:12]   # genre matches rank first
+    like = []
+    if picks:
+        got = {r["album"]: dict(r) for r in db.execute(
+            f"SELECT {_ALBUM_COLS} FROM tracks WHERE album IN ({','.join('?' * len(picks))}) GROUP BY album", picks)}
+        like = [got[a] for a in picks if a in got]
+    db.close()
+    # Generated playlists on the Search category pages (genres and decades) that include this album's songs
+    ids = {r["id"] for r in rows}
+    category = []
+    pages = [("genre", k) for k in sorted(keys)] + [("decade", d) for d in sorted({(y // 10) * 10 for y in years}, reverse=True)]
+    for kind, key in pages:
+        try:
+            page = api_genre_page(key) if kind == "genre" else api_decade_page(key)
+        except HTTPException:
+            continue
+        for pl in page["playlists"]:
+            n = sum(1 for t in pl["tracks"] if t["id"] in ids)
+            if n:
+                category.append({**pl, "from_album": n, "category": page["label"], "kind": kind, "key": key})
+    category.sort(key=lambda p: -p["from_album"])
+    return {"artists": artists, "featured": featured, "essentials": ess, "category": category[:12],
+            "brand": state["name"], "more": more, "like": like}
+
+# ── Profiles & friends ────────────────────────────────────────────────────────
+def init_profiles_db():
+    db = get_db()
+    cols = {r[1] for r in db.execute("PRAGMA table_info(users)")}
+    for col, decl in (("display_name", "TEXT"), ("bio", "TEXT DEFAULT ''"), ("avatar", "TEXT DEFAULT ''"),
+                      ("activity_vis", "TEXT DEFAULT 'friends'"), ("show_top", "INTEGER DEFAULT 1"),
+                      ("likes_public", "INTEGER DEFAULT 0"), ("profile_done", "INTEGER DEFAULT 0")):
+        if col not in cols:
+            db.execute(f"ALTER TABLE users ADD COLUMN {col} {decl}")
+    db.executescript("""
+        CREATE TABLE IF NOT EXISTS friends (
+            user_id INTEGER NOT NULL, friend_id INTEGER NOT NULL, status TEXT NOT NULL, created REAL,
+            PRIMARY KEY (user_id, friend_id)
+        );
+    """)
+    db.commit(); db.close()
+
+init_profiles_db()
+_VIS = ("everyone", "friends", "private")
+
+def _me_user(req: Request) -> dict:
+    """Profiles and friends are for user accounts only."""
+    u = _session_user(req)
+    if not u or u["id"] == 0:
+        raise HTTPException(401, "Log in with your own account to use profiles and friends")
+    return u
+
+def _relation(db, me: int, other: int) -> str:
+    if me == other:
+        return "self"
+    a = db.execute("SELECT status FROM friends WHERE user_id=? AND friend_id=?", (me, other)).fetchone()
+    b = db.execute("SELECT status FROM friends WHERE user_id=? AND friend_id=?", (other, me)).fetchone()
+    if a and b:
+        return "friends"
+    if a:
+        return "outgoing"
+    if b:
+        return "incoming"
+    return "none"
+
+def _friend_ids(db, uid: int) -> list:
+    return [r[0] for r in db.execute(
+        """SELECT f.friend_id FROM friends f JOIN friends g ON g.user_id=f.friend_id AND g.friend_id=f.user_id
+           WHERE f.user_id=?""", (uid,))]
+
+def _can_see_activity(rel: str, vis: str) -> bool:
+    return rel == "self" or vis == "everyone" or (vis == "friends" and rel == "friends")
+
+def _user_card(r) -> dict:
+    return {"username": r["username"], "display_name": r["display_name"] or r["username"], "avatar": r["avatar"] or ""}
+
+def _now_playing(db, uid: int):
+    r = db.execute(f"""SELECT {_TRACK_SEL}, p.played_at FROM plays p JOIN tracks t ON t.id=p.track_id
+                       WHERE p.user_id=? ORDER BY p.played_at DESC LIMIT 1""", (uid,)).fetchone()
+    if r and _now() - r["played_at"] < 15 * 60:          # logged ~30s into a song, so recent = probably still playing
+        return dict(r)
+    return None
+
+@api.get("/api/me/profile")
+def api_my_profile(req: Request):
+    u = _me_user(req)
+    db = get_db()
+    r = db.execute("SELECT * FROM users WHERE id=?", (u["id"],)).fetchone()
+    pls = [{"id": p["id"], "name": p["name"], "shared": bool(p["shared"])}
+           for p in db.execute("SELECT id,name,shared FROM user_playlists WHERE user_id=? ORDER BY updated DESC", (u["id"],))]
+    db.close()
+    return {"username": r["username"], "display_name": r["display_name"] or "", "bio": r["bio"] or "",
+            "avatar": r["avatar"] or "", "activity_vis": r["activity_vis"] or "friends", "show_top": bool(r["show_top"]),
+            "likes_public": bool(r["likes_public"]), "profile_done": bool(r["profile_done"]), "playlists": pls}
+
+@api.patch("/api/me/profile")
+async def api_edit_profile(req: Request):
+    u = _me_user(req)
+    body = await req.json()
+    db = get_db()
+    try:
+        if "username" in body:
+            name = str(body["username"] or "").strip()
+            if not _USERNAME_RE.match(name) or name.lower() == "admin":
+                raise HTTPException(400, "Username: 2–32 letters, numbers, dots, dashes or underscores")
+            clash = db.execute("SELECT id FROM users WHERE username=? AND id<>?", (name, u["id"])).fetchone()
+            if clash:
+                raise HTTPException(400, "That username is taken")
+            db.execute("UPDATE users SET username=? WHERE id=?", (name, u["id"]))
+        if "display_name" in body:
+            db.execute("UPDATE users SET display_name=? WHERE id=?", (re.sub(r"\s+", " ", str(body["display_name"] or "")).strip()[:40], u["id"]))
+        if "bio" in body:
+            db.execute("UPDATE users SET bio=? WHERE id=?", (str(body["bio"] or "").strip()[:200], u["id"]))
+        if "avatar" in body:
+            av = str(body["avatar"] or "")
+            if av and not (av.startswith("data:image/jpeg;base64,") and len(av) < 200_000):
+                raise HTTPException(400, "Profile photo must be a JPEG under 150 KB")
+            db.execute("UPDATE users SET avatar=? WHERE id=?", (av, u["id"]))
+        if "activity_vis" in body:
+            if body["activity_vis"] not in _VIS:
+                raise HTTPException(400, "activity_vis must be everyone, friends or private")
+            db.execute("UPDATE users SET activity_vis=? WHERE id=?", (body["activity_vis"], u["id"]))
+        for k in ("show_top", "likes_public", "profile_done"):
+            if k in body:
+                db.execute(f"UPDATE users SET {k}=? WHERE id=?", (1 if body[k] else 0, u["id"]))
+        if isinstance(body.get("public_playlists"), list):   # ids of the playlists to show on the profile
+            show = {int(i) for i in body["public_playlists"] if str(i).isdigit()}
+            for (pid,) in db.execute("SELECT id FROM user_playlists WHERE user_id=?", (u["id"],)).fetchall():
+                db.execute("UPDATE user_playlists SET shared=? WHERE id=?", (1 if pid in show else 0, pid))
+        db.commit()
+    finally:
+        db.close()
+    return api_my_profile(req)
+
+@api.get("/api/users")
+def api_users_directory(req: Request, q: str = ""):
+    me = _me_user(req)
+    db = get_db()
+    like = f"%{q.strip()}%"
+    rows = db.execute("""SELECT id,username,display_name,avatar FROM users
+                         WHERE id<>? AND (username LIKE ? OR COALESCE(display_name,'') LIKE ?)
+                         ORDER BY COALESCE(display_name,username) COLLATE NOCASE LIMIT 50""", (me["id"], like, like)).fetchall()
+    out = [{**_user_card(r), "relation": _relation(db, me["id"], r["id"])} for r in rows]
+    db.close()
+    return out
+
+@api.get("/api/users/{username}")
+def api_profile(username: str, req: Request):
+    me = _me_user(req)
+    db = get_db()
+    r = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    if not r:
+        db.close(); raise HTTPException(404, "No one by that name")
+    uid = r["id"]
+    rel = _relation(db, me["id"], uid)
+    see = _can_see_activity(rel, r["activity_vis"] or "friends")
+    out = {**_user_card(r), "bio": r["bio"] or "", "relation": rel, "activity_hidden": not see,
+           "friends": [_user_card(f) for f in db.execute(
+               f"SELECT username,display_name,avatar FROM users WHERE id IN ({','.join('?' * len(fids))})", fids)]
+           if (fids := _friend_ids(db, uid)) else [],
+           "playlists": [_pl_summary(db, p, me["id"]) for p in db.execute(
+               "SELECT * FROM user_playlists WHERE user_id=? AND shared=1 ORDER BY updated DESC", (uid,))],
+           "likes_public": bool(r["likes_public"]) or rel == "self",
+           "likes_count": db.execute("SELECT COUNT(*) FROM likes WHERE user_id=?", (uid,)).fetchone()[0]
+           if (r["likes_public"] or rel == "self") else None,
+           "now": None, "recent": [], "top_artists": [], "top_songs": []}
+    if see:
+        out["now"] = _now_playing(db, uid)
+        seen, recent = set(), []
+        for t in db.execute(f"""SELECT {_TRACK_SEL}, p.played_at FROM plays p JOIN tracks t ON t.id=p.track_id
+                                WHERE p.user_id=? ORDER BY p.played_at DESC LIMIT 200""", (uid,)):
+            if t["id"] not in seen:
+                seen.add(t["id"]); recent.append(dict(t))
+            if len(recent) >= 16:
+                break
+        out["recent"] = recent
+        if r["show_top"] or rel == "self":
+            st = _rewind_stats(_user_plays(db, uid, _now() - 30 * 86400, _now() + 1), 10)
+            out["top_artists"], out["top_songs"], out["month_minutes"] = st["top_artists"][:8], st["top_songs"], st["minutes"]
+    db.close()
+    return out
+
+@api.get("/api/users/{username}/likes")
+def api_profile_likes(username: str, req: Request):
+    me = _me_user(req)
+    db = get_db()
+    r = db.execute("SELECT id,likes_public FROM users WHERE username=?", (username,)).fetchone()
+    if not r or not (r["likes_public"] or r["id"] == me["id"]):
+        db.close(); raise HTTPException(404, "Not shared")
+    rows = [dict(x) for x in db.execute(
+        f"SELECT {_TRACK_SEL} FROM likes l JOIN tracks t ON t.id=l.track_id WHERE l.user_id=? ORDER BY l.created DESC", (r["id"],))]
+    db.close()
+    return {"tracks": rows}
+
+@api.get("/api/me/friends")
+def api_friends(req: Request):
+    me = _me_user(req)
+    db = get_db()
+    def cards(ids, with_now=False):
+        out = []
+        for uid in ids:
+            r = db.execute("SELECT id,username,display_name,avatar,activity_vis FROM users WHERE id=?", (uid,)).fetchone()
+            if not r:
+                continue
+            c = _user_card(r)
+            if with_now and _can_see_activity("friends", r["activity_vis"] or "friends"):
+                c["now"] = _now_playing(db, uid)
+            out.append(c)
+        return out
+    friends = _friend_ids(db, me["id"])
+    mine = {r[0] for r in db.execute("SELECT friend_id FROM friends WHERE user_id=?", (me["id"],))}
+    theirs = {r[0] for r in db.execute("SELECT user_id FROM friends WHERE friend_id=?", (me["id"],))}
+    res = {"friends": cards(friends, True), "incoming": cards(sorted(theirs - mine)), "outgoing": cards(sorted(mine - theirs))}
+    db.close()
+    return res
+
+@api.post("/api/me/friends/{username}")
+def api_friend_add(username: str, req: Request):
+    """Send a request, or accept theirs (both rows present = friends)."""
+    me = _me_user(req)
+    db = get_db()
+    r = db.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+    if not r or r["id"] == me["id"]:
+        db.close(); raise HTTPException(404, "No one by that name")
+    db.execute("INSERT OR IGNORE INTO friends(user_id,friend_id,status,created) VALUES(?,?,?,?)", (me["id"], r["id"], "ok", _now()))
+    db.commit(); rel = _relation(db, me["id"], r["id"]); db.close()
+    return {"relation": rel}
+
+@api.delete("/api/me/friends/{username}")
+def api_friend_remove(username: str, req: Request):
+    """Unfriend, cancel a request, or decline one: removes both directions."""
+    me = _me_user(req)
+    db = get_db()
+    r = db.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+    if r:
+        db.execute("DELETE FROM friends WHERE (user_id=? AND friend_id=?) OR (user_id=? AND friend_id=?)",
+                   (me["id"], r["id"], r["id"], me["id"]))
+        db.commit()
+    db.close()
+    return {"relation": "none"}
+
+def _friends_mix(db, uid: int, mk):
+    """Songs your friends have been playing lately (only friends who share their listening with friends)."""
+    names, counts, who = [], {}, {}
+    for fid in _friend_ids(db, uid):
+        f = db.execute("SELECT username,display_name,activity_vis FROM users WHERE id=?", (fid,)).fetchone()
+        if not f or not _can_see_activity("friends", f["activity_vis"] or "friends"):
+            continue
+        name = f["display_name"] or f["username"]
+        got = False
+        for (tid,) in db.execute("SELECT track_id FROM plays WHERE user_id=? AND played_at>? ORDER BY played_at DESC LIMIT 400",
+                                 (fid, _now() - 21 * 86400)):
+            counts[tid] = counts.get(tid, 0) + 1
+            who.setdefault(tid, set()).add(name); got = True
+        if got:
+            names.append(name)
+    if not names:
+        return None
+    ids = sorted(counts, key=lambda t: (-len(who[t]), -counts[t]))[:40]
+    who_txt = (names[0] if len(names) == 1 else f"{names[0]} and {names[1]}" if len(names) == 2
+               else f"{names[0]}, {names[1]} and {len(names) - 2} more")
+    sub = f"What {who_txt} {'has' if len(names) == 1 else 'have'} been playing"
+    m = mk("friends", "Friends Mix", ids, sub)
+    if m:
+        for t in m["tracks"]:
+            t["friends"] = sorted(who.get(t["id"], []))
+        m["artists"] = names[:5]                       # the card footer lists friends instead of artists
+    return m
+
+# ── Explicit tags & admin accounts ────────────────────────────────────────────
+_EXPLICIT_TITLE = re.compile(r"[\(\[]\s*explicit\s*[\)\]]", re.I)
+
+def _explicit_flag(path: Path, title: str = "") -> int:
+    """1 if the file is marked explicit (iTunes rating, ITUNESADVISORY / EXPLICIT tags, or '(Explicit)' in the title)."""
+    try:
+        af = MutagenFile(str(path))
+        tags = getattr(af, "tags", None) if af is not None else None
+        if tags is not None:
+            rt = tags.get("rtng") if hasattr(tags, "get") else None          # MP4/M4A: 1 or 4 = explicit, 2 = clean
+            if rt:
+                v = rt[0] if isinstance(rt, list) else rt
+                if int(v) in (1, 4):
+                    return 1
+            for k in list(tags.keys()):                                       # ID3 TXXX frames + Vorbis comments
+                kl = str(k).lower()
+                if any(x in kl for x in ("itunesadvisory", "explicit", "contentrating", "advisory")):
+                    v = tags[k]
+                    v = getattr(v, "text", v)
+                    v = str(v[0] if isinstance(v, list) and v else v).strip().lower()
+                    if v in ("1", "4", "explicit", "true", "yes", "e"):
+                        return 1
+    except Exception:
+        pass
+    return 1 if _EXPLICIT_TITLE.search(title or path.stem) else 0
+
+def _init_explicit():
+    db = get_db()
+    cols = {r[1] for r in db.execute("PRAGMA table_info(tracks)")}
+    if cols and "explicit" not in cols:
+        db.execute("ALTER TABLE tracks ADD COLUMN explicit INTEGER")
+        db.commit()
+    ucols = {r[1] for r in db.execute("PRAGMA table_info(users)")}
+    if ucols and "is_admin" not in ucols:
+        db.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+        db.commit()
+    db.close()
+
+def _backfill_explicit():
+    """Existing libraries: read the explicit flag once for tracks scanned before this feature."""
+    _init_explicit()
+    db = get_db()
+    try:
+        rows = db.execute("SELECT id,path,title FROM tracks WHERE explicit IS NULL").fetchall()
+    except sqlite3.OperationalError:        # no library yet
+        db.close(); return
+    for n, r in enumerate(rows):
+        db.execute("UPDATE tracks SET explicit=? WHERE id=?", (_explicit_flag(Path(r["path"]), r["title"]), r["id"]))
+        if n % 200 == 199:
+            db.commit()
+    db.commit(); db.close()
+
+_init_explicit()
+threading.Thread(target=_backfill_explicit, daemon=True).start()
+
+@api.get("/api/explicit")
+def api_explicit_ids():
+    db = get_db()
+    ids = [r[0] for r in db.execute("SELECT id FROM tracks WHERE explicit=1")]
+    db.close()
+    return {"ids": ids}
+
+@api.post("/api/admin/users/{uid}/admin")
+async def api_users_set_admin(uid: int, req: Request):
+    _require_admin(req)
+    on = bool((await req.json()).get("admin"))
+    db = get_db(); db.execute("UPDATE users SET is_admin=? WHERE id=?", (1 if on else 0, uid)); db.commit(); db.close()
+    return {"admin": on}
+
+def _admin_cli(args: list) -> int:
+    """python leon_music.py admin list | add <user> | remove <user> | create <user>"""
+    for _s in (sys.stdout, sys.stderr):              # old Windows consoles: never crash on ✓ / ★
+        try: _s.reconfigure(errors="replace")
+        except Exception: pass
+    init_db(); init_users_db(); init_profiles_db(); _init_explicit()
+    cmd = (args[0] if args else "help").lower()
+    db = get_db()
+    try:
+        if cmd == "list":
+            rows = db.execute("SELECT username,is_admin FROM users ORDER BY username COLLATE NOCASE").fetchall()
+            if not rows:
+                print("No user accounts yet. Create one with:  admin create <username>")
+            for r in rows:
+                print(f"  {'★ admin ' if r['is_admin'] else '        '}{r['username']}")
+            print("\n  (the built-in 'admin' login always works with the admin password)")
+            return 0
+        if cmd in ("add", "remove") and len(args) == 2:
+            r = db.execute("SELECT id,username FROM users WHERE username=?", (args[1],)).fetchone()
+            if not r:
+                print(f"No account called '{args[1]}'. Run 'admin list' to see accounts, or 'admin create {args[1]}'.")
+                return 1
+            db.execute("UPDATE users SET is_admin=? WHERE id=?", (1 if cmd == "add" else 0, r["id"])); db.commit()
+            print(f"✓ {r['username']} is {'now an admin' if cmd == 'add' else 'no longer an admin'}. "
+                  f"{'They get admin controls the next time they open leon.music.' if cmd == 'add' else ''}")
+            return 0
+        if cmd == "create" and len(args) == 2:
+            import getpass
+            name = args[1]
+            if not _USERNAME_RE.match(name) or name.lower() == "admin":
+                print("Username: 2–32 letters, numbers, dots, dashes or underscores (not 'admin').")
+                return 1
+            if db.execute("SELECT 1 FROM users WHERE username=?", (name,)).fetchone():
+                print(f"'{name}' already exists. To make them an admin:  admin add {name}")
+                return 1
+            pw = getpass.getpass(f"Password for {name} (8+ characters): ")
+            if len(pw) < MIN_PW_LEN or pw != getpass.getpass("Repeat password: "):
+                print("Passwords didn't match or were too short. Nothing changed.")
+                return 1
+            db.execute("INSERT INTO users(username,pw_hash,is_admin) VALUES(?,?,1)", (name, _hash_pw(pw))); db.commit()
+            print(f"✓ Created admin account '{name}'. Note: logins are now required for everyone on this server.")
+            return 0
+        print(__doc__ if False else
+              "leon.music admin commands:\n"
+              "  python leon_music.py admin list               show accounts (★ = admin)\n"
+              "  python leon_music.py admin add <username>     make an existing account an admin\n"
+              "  python leon_music.py admin remove <username>  take admin rights away\n"
+              "  python leon_music.py admin create <username>  create a new admin account (asks for a password)")
+        return 0 if cmd == "help" else 1
+    finally:
+        db.close()
+
 # ── Admin page ────────────────────────────────────────────────────────────────
 ADMIN_HTML = """<!doctype html>
 <html lang="en">
@@ -3197,6 +3976,8 @@ input[type=checkbox]{width:auto}
     <div class="card-title">Artists</div>
     <div class="chk" style="margin-top:0"><input type="checkbox" id="picsOnline" onchange="savePicsOnline()">
       <span>Fetch artist photos from Deezer automatically. Artist names are sent to deezer.com; you can also set a photo by URL on any artist page.</span></div>
+    <div class="chk"><input type="checkbox" id="lyricsOnline" onchange="saveLyricsOnline()">
+      <span>Look up lyrics on LRCLIB (lrclib.net) when a song has no .lrc file or embedded lyrics. Artist, title, album and length are sent to lrclib.net; results are saved, so each song is looked up once.</span></div>
     <div class="msg" id="picsMsg"></div>
     <label>Force an Essentials page</label>
     <div style="display:flex;gap:8px">
@@ -3412,6 +4193,7 @@ function previewHero(){
 function loadThemeUI(d){
   _accent = d.accent || '#e5282a';
   document.getElementById('picsOnline').checked = d.artist_pics_online !== false;
+  document.getElementById('lyricsOnline').checked = d.lyrics_online !== false;
   document.documentElement.style.setProperty('--accent', _accent);
   document.getElementById('heroUrl').value = d.hero_image || '';
   document.getElementById('tintCustomOn').checked = !!d.hero_tint;
@@ -3434,6 +4216,14 @@ async function saveTheme(){
 }
 
 // ── Artist photos ──
+async function saveLyricsOnline(){
+  const on = document.getElementById('lyricsOnline').checked;
+  const r = await fetch('/api/admin/settings',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_token},body:JSON.stringify({lyrics_online:on})});
+  const m = document.getElementById('picsMsg');
+  m.className = r.ok ? 'msg ok' : 'msg err';
+  m.textContent = r.ok ? 'Saved ✓' : 'Failed to save.';
+  setTimeout(() => m.textContent = '', 3000);
+}
 async function savePicsOnline(){
   const on = document.getElementById('picsOnline').checked;
   const r = await fetch('/api/admin/settings',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_token},body:JSON.stringify({artist_pics_online:on})});
@@ -3629,8 +4419,9 @@ async function removeStation(id, name){
   loadStations();
 }
 
-// Auto-login if token already in session
+// Auto-login if token already in session, or if this login is an admin account
 if(_token) showAdmin();
+else fetch('/api/admin/check').then(r=>r.json()).then(d=>{if(d.admin)showAdmin();}).catch(()=>{});
 </script>
 </body>
 </html>"""
@@ -3685,6 +4476,8 @@ def _build_menu():
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     global _tray_icon
+    if len(sys.argv) > 1 and sys.argv[1].lower() == "admin":     # python leon_music.py admin add <username>
+        sys.exit(_admin_cli(sys.argv[2:]))
 
     # Init DB
     init_db()

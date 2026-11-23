@@ -12,11 +12,22 @@ A self-hosted music player that lives in your system tray. Point it at a folder 
 - **Your own live radio stations**, broadcast to your Icecast server on a schedule you set.
 - **User accounts** with a personal "Made for You" home, Top Picks and **Rewind** listening stats.
 - **Charts, a New page, Search with genre and decade categories.**
+- **Likes, your own playlists, synced lyrics, profiles and friends**, with a Friends Mix.
 - **Admin panel** for theming, cover logos, playlist covers, radio stations and more.
 - **Light and dark themes**, responsive layout, mobile friendly.
 - Just two files: `leon_music.py` (server and tray app) and `frontend.html` (the player UI).
 
-## What's new: The Biggest Music Update
+## What's new in 2.1
+
+- **♥ Likes & your own playlists**: heart songs into Liked Songs, create playlists from any song's ··· menu, drag to reorder, and share them with everyone on the server.
+- **🎤 Synced lyrics**: tap **Ly** in the player for full-screen lyrics that follow the song. They come from `.lrc` files next to your songs, lyrics in your tags, or [LRCLIB](https://lrclib.net), a free and open lyrics database (switchable in the admin panel).
+- **👤 Profiles & friends**: a profile setup wizard (photo, name, which playlists to show, privacy), public profiles with *Listening now* and top artists, friend requests, and a **Friends Mix** in Made for You.
+- **💿 Album pages**: *Featured On* (Essentials, folder playlists, and genre and decade playlists), *More from …* and *You May Also Like*.
+- **🅴 Explicit badges** read from your tags, and live radio stations that can skip explicit songs.
+- **🛡 Admin accounts**: make any account an admin from Settings or with `python leon_music.py admin add <username>`.
+- **Fixed**: cover logos were cropped on square mix covers.
+
+## The Biggest Music Update (2.0)
 
 - **Search page** with results for songs, artists and albums, plus *Browse categories*: a tinted tile for every genre on your server and a **Decades** row. Each genre and decade has its own page with feature cards, generated playlists, top songs, albums and artists.
 - **New page**: feature cards, newest songs, trending songs, new albums, new and updated playlists, this year's releases and new artists. Albums, Artists and Songs now live at the bottom of this page.
@@ -66,6 +77,19 @@ Music/
 - Artists with 6 or more tracks automatically get an **Essentials** page. Admins can force one for any artist.
 
 Rescan from the tray menu ("Rescan library") or from Settings in the web UI. Unchanged files are skipped, so rescans are quick.
+
+## Admin accounts
+
+Besides the built-in `admin` login, any user account can be an admin. Run these from the folder with `leon_music.py`:
+
+```bash
+python leon_music.py admin list              # accounts, ★ = admin
+python leon_music.py admin add alex          # make an account an admin
+python leon_music.py admin remove alex       # take it away again
+python leon_music.py admin create someone    # new admin account (asks for a password)
+```
+
+Or use **Make admin** in Settings → Users.
 
 ## Admin panel
 
@@ -151,6 +175,9 @@ All endpoints are under `/api`. Admin endpoints need an `X-Admin-Token` header o
 | `GET /api/new` | New page |
 | `POST /api/auth/login`, `GET /api/auth/me` | Logins (accounts, admin, library password) |
 | `GET /api/me/home`, `/api/me/rewind`, `/api/me/rewind/week` | Personal mixes and Rewind |
+| `/api/me/likes`, `/api/me/playlists` | Liked Songs and your playlists |
+| `GET /api/lyrics/{id}` | Lyrics |
+| `/api/me/profile`, `/api/users/{name}`, `/api/me/friends` | Profiles and friends |
 | `GET/POST /api/broadcast` | Live radio setup (admin) |
 | `POST /api/admin/*`, `POST /api/playlist/{name}/*` | Admin actions |
 
@@ -161,7 +188,8 @@ leon.music is built for personal, trusted-network use. Before exposing it to the
 - **Set an admin password during setup.** If none is set, anyone who can reach the server can log in as admin.
 - The library is open to anyone who can reach it **until** you set a library password or create the first user account.
 - Admin actions that fetch URLs (playlist covers, artist photos) make requests from your machine, so do not give admin access to people you don't trust.
-- Artist photo lookup sends artist names to deezer.com. Turn it off in the admin panel if you'd rather not. The release-year scan sends artist and song names to deezer.com too.
+- Artist photo lookup sends artist names to deezer.com. Turn it off in the admin panel if you'd rather not. The release-year scan sends artist and song names to deezer.com too, and lyrics lookup sends artist, title, album and length to lrclib.net (also switchable).
+- Profiles share listening with friends only by default; each person can choose everyone or only themselves.
 - The Icecast source password is stored in `config.json` (so stations can reconnect on their own); it is never sent back to the browser.
 
 Found a vulnerability? Please open a private security advisory on GitHub rather than a public issue.
