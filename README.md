@@ -17,6 +17,12 @@ A self-hosted music player that lives in your system tray. Point it at a folder 
 - **Light and dark themes**, responsive layout, mobile friendly.
 - Just two files: `leon_music.py` (server and tray app) and `frontend.html` (the player UI).
 
+## What's new in 2.4
+
+- **📱 Subsonic apps**: leon.music now speaks the Subsonic API (1.16.1 + OpenSubsonic). Create an app password in Settings and use Symfonium, Tempo, DSub, Substreamer, play:Sub, Feishin and more, with offline downloads, CarPlay and Android Auto. Likes, playlists and plays are shared with the web app, and apps can ask for a lower bitrate (converted with ffmpeg).
+- **🎧 Last.fm & ListenBrainz scrobbling**: connect your accounts in Settings. Songs scrobble after half (or 4 minutes), from the web player and from Subsonic apps, with now-playing updates and retries when offline. Last.fm needs the admin to add a free API key in the admin panel.
+- **Website**: a new [Compare page](https://weareleon.github.io/leonmusic/compare.html) (leon.music vs Navidrome, Jellyfin and Plex) and docs for apps and scrobbling.
+
 ## What's new in 2.3
 
 - **✉️ Email support**: connect your own mail provider in the admin panel (SMTP, with a test button). Users add and confirm their address in Settings and choose what they get.

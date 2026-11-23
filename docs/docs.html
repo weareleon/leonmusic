@@ -14,7 +14,7 @@
 <header class="nav"><div class="nav-in">
   <a class="brand" href="./"><i></i>leon.music</a>
   <nav class="nav-links" id="navLinks">
-    <a href="./#features">Features</a><a href="./#radio">Live radio</a><a href="./#install">Install</a><a href="docs.html" aria-current="page">Docs</a>
+    <a href="./#features">Features</a><a href="./#radio">Live radio</a><a href="./#install">Install</a><a href="compare.html">Compare</a><a href="docs.html" aria-current="page">Docs</a>
   </nav>
   <a class="btn sm gh" href="https://github.com/weareleon/leonmusic">GitHub</a>
   <a class="btn sm pri" href="https://github.com/weareleon/leonmusic/releases/latest">Download</a>
@@ -32,7 +32,7 @@
   <b>Live radio</b>
   <a href="#radio">What it is</a><a href="#radio-how">How it works</a><a href="#icecast">Install Icecast</a><a href="#radio-setup">Setting up stations</a><a href="#radio-listen">Listening</a><a href="#radio-manage">Managing &amp; fixes</a><a href="#streams">Internet radio streams</a>
   <b>Admin</b>
-  <a href="#admin">Admin panel</a><a href="#admins">Admin accounts</a><a href="#email">Email</a><a href="#data">Configuration &amp; data</a><a href="#build">Building an app</a>
+  <a href="#admin">Admin panel</a><a href="#admins">Admin accounts</a><a href="#email">Email</a><a href="#apps">Apps &amp; scrobbling</a><a href="#data">Configuration &amp; data</a><a href="#build">Building an app</a>
   <b>Reference</b>
   <a href="#api">API</a><a href="#security">Security</a><a href="#faq">Troubleshooting</a>
 </aside>
@@ -345,6 +345,7 @@ pyinstaller --onefile --windowed --name "leon.music" leon_music.py</pre></div>
 <tr><td><code>GET /api/christmas</code></td><td>The Christmas category page</td></tr>
 <tr><td><code>POST /api/covers/preview</code>, <code>GET /api/covers/fonts</code>, <code>/api/me/playlists/{id}/cover</code></td><td>Cover designer</td></tr>
 <tr><td><code>/api/me/email</code>, <code>POST /api/auth/forgot</code>, <code>/api/auth/reset</code></td><td>Email address, preferences and password reset</td></tr>
+<tr><td><code>/rest/*</code></td><td>Subsonic API (1.16.1, OpenSubsonic) for apps</td></tr>
 <tr><td><code>GET /api/explicit</code></td><td>IDs of explicit songs</td></tr>
 <tr><td><code>GET|POST /api/broadcast</code></td><td>Live radio setup (admin)</td></tr>
 <tr><td><code>/api/admin/*</code></td><td>Admin actions (users, settings, stations)</td></tr></table>
@@ -363,6 +364,20 @@ pyinstaller --onefile --windowed --name "leon.music" leon_music.py</pre></div>
 <li>Admins also get <b>server alerts</b>: a radio station off air for 10 minutes, a failed library scan, or a nearly full disk. You can send these to an extra address too.</li></ul>
 <p><b>Forgot password?</b> on the login screen emails a reset link (one hour, single use) to a confirmed address. Adding an account with an email sends a welcome. Every optional email has an unsubscribe link.</p>
 <div class="note tip"><span>💡</span><span>The SMTP password is saved in <code>config.json</code> on the server and never shown again in the admin panel.</span></div>
+
+<h2 id="apps">Subsonic apps</h2>
+<p>leon.music speaks the <b>Subsonic API</b>, so you can use apps like <b>Symfonium</b>, <b>Tempo</b> or <b>DSub</b> (Android), <b>Substreamer</b> or <b>play:Sub</b> (iPhone) and <b>Feishin</b> (desktop). They add offline downloads, CarPlay and Android Auto.</p>
+<ol><li>In leon.music, open <b>Settings → Apps &amp; scrobbling</b> and press <b>Create app password</b>.</li>
+<li>In the app, add a server with the address, username and app password shown there.</li></ol>
+<ul><li>Your likes, playlists, plays, lyrics and folder playlists are shared with the app; starring a song likes it. Plays from apps count towards charts, Rewind and mixes.</li>
+<li>Apps can ask for a lower bitrate on mobile data; leon.music converts with ffmpeg when it's installed.</li>
+<li>The app password only works in apps. <b>New password</b> signs every app out. Your normal password works too, but only in apps that don't use token login.</li>
+<li>No accounts on your server? Log in to the admin panel and create an app password for <code>admin</code>.</li></ul>
+
+<h2 id="scrobbling">Last.fm &amp; ListenBrainz</h2>
+<p>Each person can send what they play to <b>Last.fm</b> and <b>ListenBrainz</b> from <b>Settings → Apps &amp; scrobbling</b>. A song counts once half of it (or 4 minutes) has played, from the web player or a Subsonic app. Only the song, artist, album, length and time are sent. If the internet is down, scrobbles are kept and sent later.</p>
+<ul><li><b>ListenBrainz</b>: paste the user token from <a href="https://listenbrainz.org/settings/">listenbrainz.org/settings</a>.</li>
+<li><b>Last.fm</b>: the admin first creates a free API account at <a href="https://www.last.fm/api/account/create">last.fm/api/account/create</a>, sets its callback URL to the one shown in the admin panel's <b>Last.fm scrobbling</b> card, and pastes the key and shared secret there. Then everyone can press <b>Connect Last.fm</b>.</li></ul>
 
 <h2 id="security">Security</h2>
 <ul><li>All passwords (admin, library and accounts) are salted <b>scrypt</b> hashes. Older plain-text admin passwords are converted automatically.</li>
@@ -391,7 +406,7 @@ pyinstaller --onefile --windowed --name "leon.music" leon_music.py</pre></div>
 <footer><div class="wrap">
   <a class="brand" href="./"><i></i>leon.music</a>
   <span>Free and open source, MIT license. Screenshots show a fictional demo library.</span>
-  <nav><a href="./">Home</a><a href="https://github.com/weareleon/leonmusic">GitHub</a><a href="https://github.com/weareleon/leonmusic/releases">Releases</a></nav>
+  <nav><a href="./">Home</a><a href="compare.html">Compare</a><a href="https://github.com/weareleon/leonmusic">GitHub</a><a href="https://github.com/weareleon/leonmusic/releases">Releases</a></nav>
 </div></footer>
 
 <div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Screenshot"><img alt=""></div>

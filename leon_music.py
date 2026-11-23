@@ -54,7 +54,7 @@ PIL       = _require("PIL", "pillow")
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
-                                StreamingResponse)
+                                RedirectResponse, StreamingResponse)
 from mutagen import File as MutagenFile
 from PIL import Image, ImageDraw, ImageFont
 import pystray as _pystray
@@ -1497,6 +1497,7 @@ async def _lifespan(_app):
     threading.Thread(target=bc_sync, daemon=True).start()
     threading.Thread(target=system_fonts, daemon=True).start()     # warm the cover designer's font list
     threading.Thread(target=_email_loop, daemon=True, name="email").start()
+    threading.Thread(target=_scrobble_loop, daemon=True, name="scrobble").start()
     yield
 
 api.router.lifespan_context = _lifespan
@@ -2545,7 +2546,7 @@ async def api_users_reset(uid: int, req: Request):
 def api_users_delete(uid: int, req: Request):
     _require_admin(req)
     db = get_db()
-    for t in ("sessions", "user_mixes", "likes", "email_tokens", "email_log"):
+    for t in ("sessions", "user_mixes", "likes", "email_tokens", "email_log", "sub_stars", "scrobble_queue"):
         db.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))
     db.execute("DELETE FROM friends WHERE user_id=? OR friend_id=?", (uid, uid))
     db.execute("DELETE FROM user_playlist_tracks WHERE playlist_id IN (SELECT id FROM user_playlists WHERE user_id=?)", (uid,))
@@ -4400,6 +4401,19 @@ input[type=checkbox]{width:auto}
   </div>
 
   <div class="card">
+    <div class="card-title">Last.fm scrobbling</div>
+    <div style="font-size:12.5px;color:var(--fg2);line-height:1.5">To let people send what they play to Last.fm, create a free API account at
+      <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener" style="color:var(--accent)">last.fm/api/account/create</a>
+      and paste its key and shared secret here. Set its <b>Callback URL</b> to <code id="lfCb"></code>.
+      ListenBrainz needs nothing from you: people paste their own token in Settings.</div>
+    <label>API key</label><input type="text" id="lfKey" placeholder="32 letters and numbers" autocomplete="off">
+    <label>Shared secret</label><input type="password" id="lfSecret" placeholder="32 letters and numbers" autocomplete="new-password">
+    <div class="cv-empty" id="lfInfo" style="margin:14px 0 0"></div>
+    <div class="msg" id="lfMsg"></div>
+    <div class="row"><button class="btn btn-primary" onclick="saveLastfm()">Save</button></div>
+  </div>
+
+  <div class="card">
     <div class="card-title">Email</div>
     <div style="font-size:12.5px;color:var(--fg2);line-height:1.5">Lets leon.music send password resets, weekly digests, friend notifications and server alerts.
       Use your email provider's SMTP details: Gmail and Outlook need an <b>app password</b>; services like Brevo or Resend give you SMTP details too.</div>
@@ -4476,6 +4490,7 @@ async function showAdmin(){
   loadStations();
   loadYearScan();
   loadEmailUI();
+  loadLastfmUI();
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('adminMain').style.display = 'block';
   document.getElementById('logoutBtn').style.display = '';
@@ -4617,6 +4632,23 @@ async function saveTheme(){
   if(r.ok){ m.className = 'msg ok'; m.textContent = 'Saved ✓ — reload the player to see it'; }
   else { const e = await r.json().catch(() => ({})); m.className = 'msg err'; m.textContent = e.detail || 'Failed to save.'; }
   setTimeout(() => m.textContent = '', 4000);
+}
+
+// ── Last.fm ──
+async function loadLastfmUI(){
+  let d;try{d=await (await fetch('/api/admin/lastfm',{headers:{'X-Admin-Token':_token}})).json();}catch(e){return;}
+  document.getElementById('lfKey').value=d.api_key||'';
+  document.getElementById('lfSecret').placeholder=d.has_secret?'Saved (leave blank to keep)':'32 letters and numbers';
+  document.getElementById('lfCb').textContent=d.callback;
+  document.getElementById('lfInfo').textContent=`${d.lastfm_users} connected to Last.fm · ${d.lb_users} connected to ListenBrainz`;
+}
+async function saveLastfm(){
+  const m=document.getElementById('lfMsg'),b={api_key:document.getElementById('lfKey').value.trim()};
+  const sec=document.getElementById('lfSecret').value.trim();if(sec)b.secret=sec;
+  const r=await fetch('/api/admin/lastfm',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_token},body:JSON.stringify(b)});
+  const e=await r.json().catch(()=>({}));
+  m.className=r.ok?'msg ok':'msg err';m.textContent=r.ok?'Saved ✓':(e.detail||'Failed to save.');
+  if(r.ok){document.getElementById('lfSecret').value='';loadLastfmUI();}
 }
 
 // ── Email ──
@@ -5610,6 +5642,1008 @@ def _email_loop():
         except Exception as e:
             print(f"[email] scheduler: {e}", file=sys.stderr)
         sleep(600)
+
+# ── Subsonic API (/rest): lets Subsonic/OpenSubsonic apps (Symfonium, Feishin, DSub, …) use leon.music ──
+import xml.etree.ElementTree as _ET
+import random as _random
+import subprocess as _subprocess
+
+APP_VERSION = "2.4.0"
+SUBSONIC_VERSION = "1.16.1"
+_SUB_ARTICLES = "The El La Los Las Le Les Die Der Das"
+
+def init_subsonic_db():
+    db = get_db()
+    cols = {r[1] for r in db.execute("PRAGMA table_info(users)")}
+    for col, decl in (("subsonic_pw", "TEXT"), ("lastfm_session", "TEXT"), ("lastfm_user", "TEXT"),
+                      ("lb_token", "TEXT"), ("lb_user", "TEXT")):
+        if col not in cols:
+            db.execute(f"ALTER TABLE users ADD COLUMN {col} {decl}")
+    db.executescript("""
+        CREATE TABLE IF NOT EXISTS sub_stars (
+            user_id INTEGER NOT NULL, kind TEXT NOT NULL, item TEXT NOT NULL, created REAL,
+            PRIMARY KEY (user_id, kind, item)
+        );
+        CREATE TABLE IF NOT EXISTS scrobble_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, service TEXT NOT NULL,
+            payload TEXT NOT NULL, tries INTEGER DEFAULT 0, created REAL
+        );
+    """)
+    db.commit(); db.close()
+
+init_subsonic_db()
+
+class _SubErr(Exception):
+    def __init__(self, code: int, msg: str):
+        super().__init__(msg); self.code = code; self.msg = msg
+
+def _sid(prefix: str, key: str) -> str:
+    return prefix + hashlib.md5(key.lower().encode("utf-8")).hexdigest()[:12]
+
+def _iso(v) -> str:
+    """added_at ('YYYY-MM-DD HH:MM:SS', UTC) or a unix time -> ISO 8601."""
+    if v is None:
+        return ""
+    if isinstance(v, (int, float)):
+        return _dt.datetime.fromtimestamp(v, _dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return str(v).replace(" ", "T")[:19] + "Z"
+
+# Library index (artists/albums don't have tables: they're derived from the tracks, keyed by stable hashes)
+_sub_idx = {"sig": None, "data": None}
+_sub_idx_lock = threading.Lock()
+
+def _sub_index() -> dict:
+    db = get_db()
+    sig = tuple(db.execute("SELECT COUNT(*), MAX(id), MAX(mtime) FROM tracks").fetchone())
+    if _sub_idx["sig"] == sig and _sub_idx["data"]:
+        db.close(); return _sub_idx["data"]
+    with _sub_idx_lock:
+        if _sub_idx["sig"] == sig and _sub_idx["data"]:
+            db.close(); return _sub_idx["data"]
+        rows = db.execute("""SELECT id,title,artist,album,album_artist,track_num,disc_num,year,genre,duration,
+                                    bitrate,size,cover_id,path,playlist,added_at,COALESCE(explicit,0) AS explicit
+                             FROM tracks""").fetchall()
+        db.close()
+        songs, albums, artists = {}, {}, {}
+        for r in rows:
+            main = (r["album_artist"] or r["artist"] or "Unknown Artist").strip() or "Unknown Artist"
+            alname = (r["album"] or "Unknown Album").strip() or "Unknown Album"
+            arid, alid = _sid("ar-", main), _sid("al-", main + "\x00" + alname)
+            ar = artists.setdefault(arid, {"id": arid, "name": main, "albums": [], "cover": None})
+            al = albums.get(alid)
+            if not al:
+                al = albums[alid] = {"id": alid, "name": alname, "artist": main, "artistId": arid, "songs": [],
+                                     "duration": 0, "year": None, "genre": None, "cover": None, "created": None}
+                ar["albums"].append(alid)
+            al["songs"].append(r["id"]); al["duration"] += int(r["duration"] or 0)
+            al["year"] = al["year"] or r["year"]; al["genre"] = al["genre"] or r["genre"]
+            al["cover"] = al["cover"] or r["cover_id"]; ar["cover"] = ar["cover"] or r["cover_id"]
+            if r["added_at"] and (not al["created"] or r["added_at"] < al["created"]):
+                al["created"] = r["added_at"]
+            d = dict(r); d["albumId"] = alid; d["artistId"] = arid
+            songs[r["id"]] = d
+        for al in albums.values():
+            al["songs"].sort(key=lambda i: (songs[i]["disc_num"] or 1, songs[i]["track_num"] or 0, (songs[i]["title"] or "").lower()))
+        data = {"songs": songs, "albums": albums, "artists": artists}
+        _sub_idx.update(sig=sig, data=data)
+        return data
+
+def _song_obj(s: dict, stars: dict, plays: dict) -> dict:
+    p = Path(s["path"])
+    suffix = p.suffix.lstrip(".").lower()
+    try:
+        rel = str(p.relative_to(state["music_dir"])).replace("\\", "/")
+    except Exception:
+        rel = f"{s['artist'] or 'Unknown'}/{s['album'] or 'Unknown'}/{p.name}"
+    o = {"id": str(s["id"]), "parent": s["albumId"], "isDir": False, "title": s["title"] or p.stem,
+         "album": s["album"] or "Unknown Album", "artist": s["artist"] or "Unknown Artist",
+         "coverArt": s["albumId"], "size": s["size"] or 0, "contentType": mimetypes.guess_type(p.name)[0] or "audio/mpeg",
+         "suffix": suffix, "duration": int(s["duration"] or 0), "bitRate": int((s["bitrate"] or 0) // 1000),
+         "path": rel, "albumId": s["albumId"], "artistId": s["artistId"], "type": "music", "mediaType": "song",
+         "isVideo": False, "created": _iso(s["added_at"]), "playCount": plays.get(s["id"], 0),
+         "explicitStatus": "explicit" if s["explicit"] == 1 else ""}
+    if s["track_num"]: o["track"] = s["track_num"]
+    if s["disc_num"]: o["discNumber"] = s["disc_num"]
+    if s["year"]: o["year"] = s["year"]
+    if s["genre"]: o["genre"] = s["genre"]
+    if s["id"] in stars: o["starred"] = _iso(stars[s["id"]])
+    return o
+
+def _album_obj(al: dict, stars: dict = None, plays: dict = None) -> dict:
+    o = {"id": al["id"], "name": al["name"], "title": al["name"], "album": al["name"], "artist": al["artist"],
+         "artistId": al["artistId"], "parent": al["artistId"], "isDir": True, "coverArt": al["id"],
+         "songCount": len(al["songs"]), "duration": al["duration"], "created": _iso(al["created"])}
+    if al["year"]: o["year"] = al["year"]
+    if al["genre"]: o["genre"] = al["genre"]
+    if stars and al["id"] in stars: o["starred"] = _iso(stars[al["id"]])
+    if plays is not None: o["playCount"] = sum(plays.get(i, 0) for i in al["songs"])
+    return o
+
+def _artist_obj(ar: dict, stars: dict = None) -> dict:
+    o = {"id": ar["id"], "name": ar["name"], "albumCount": len(ar["albums"]), "coverArt": ar["id"]}
+    if stars and ar["id"] in stars: o["starred"] = _iso(stars[ar["id"]])
+    return o
+
+class _SubCtx:
+    """Per-request helpers: the user, their stars and play counts."""
+    def __init__(self, uid: int, name: str, admin: bool):
+        self.uid, self.name, self.admin = uid, name, admin
+        self._stars = self._plays = None
+    def stars(self, kind: str) -> dict:
+        if self._stars is None:
+            db = get_db()
+            self._stars = {"song": {r[0]: r[1] for r in db.execute("SELECT track_id,created FROM likes WHERE user_id=?", (self.uid,))},
+                           "album": {}, "artist": {}}
+            for k, item, c in db.execute("SELECT kind,item,created FROM sub_stars WHERE user_id=?", (self.uid,)):
+                self._stars.setdefault(k, {})[item] = c
+            db.close()
+        return self._stars[kind]
+    def plays(self) -> dict:
+        if self._plays is None:
+            db = get_db()
+            self._plays = {r[0]: r[1] for r in db.execute(
+                "SELECT track_id,COUNT(*) FROM plays WHERE user_id IS ? GROUP BY track_id", (self.uid or None,))}
+            db.close()
+        return self._plays
+    def song(self, s): return _song_obj(s, self.stars("song"), self.plays())
+    def album(self, al): return _album_obj(al, self.stars("album"), self.plays())
+    def artist(self, ar): return _artist_obj(ar, self.stars("artist"))
+
+# ── Auth ──
+def _sub_auth(req: Request, P) -> _SubCtx:
+    u = (P("u") or "").strip()
+    if not u:
+        raise _SubErr(10, "Required parameter is missing: u")
+    _rate_check(req)
+    cfg = load_config()
+    if u.lower() == "admin":
+        uid, name, admin, app_pw, login_hash = 0, "admin", True, cfg.get("subsonic_admin_pw") or "", cfg.get("admin_password_hash", "")
+    else:
+        db = get_db()
+        r = db.execute("SELECT id,username,pw_hash,subsonic_pw,COALESCE(is_admin,0) AS a FROM users WHERE username=?", (u,)).fetchone()
+        db.close()
+        if not r:
+            _rate_fail(req); raise _SubErr(40, "Wrong username or password")
+        uid, name, admin, app_pw, login_hash = r["id"], r["username"], bool(r["a"]), r["subsonic_pw"] or "", r["pw_hash"]
+    t, s, p = P("t"), P("s"), P("p")
+    ok = False
+    if t and s:
+        ok = bool(app_pw) and _hmac.compare_digest(hashlib.md5((app_pw + s).encode("utf-8")).hexdigest(), t.lower())
+        if not ok and not app_pw:
+            _rate_fail(req)
+            raise _SubErr(41, "Create an app password in leon.music Settings to use token login")
+    elif p is not None:
+        if p.startswith("enc:"):
+            try:
+                p = bytes.fromhex(p[4:]).decode("utf-8")
+            except Exception:
+                p = ""
+        ok = (bool(app_pw) and _hmac.compare_digest(p, app_pw)) or (bool(login_hash) and _check_pw(p, login_hash))
+    else:
+        raise _SubErr(10, "Required parameter is missing: p or t and s")
+    if not ok:
+        _rate_fail(req); raise _SubErr(40, "Wrong username or password")
+    _rate_ok(req)
+    return _SubCtx(uid, name, admin)
+
+# ── Response formatting ──
+def _sub_xml(parent, key, val):
+    if isinstance(val, list):
+        for v in val:
+            _sub_xml(parent, key, v)
+        return
+    el = _ET.SubElement(parent, key)
+    if isinstance(val, dict):
+        for k, v in val.items():
+            if v is None:
+                continue
+            if k == "value" and not isinstance(v, (dict, list)):
+                el.text = str(v)
+            elif isinstance(v, (dict, list)):
+                _sub_xml(el, k, v)
+            else:
+                el.set(k, "true" if v is True else "false" if v is False else str(v))
+    else:
+        el.text = str(val)
+
+def _sub_resp(P, body: dict = None, status="ok", error=None) -> Response:
+    base = {"status": status, "version": SUBSONIC_VERSION, "type": "leon.music", "serverVersion": APP_VERSION, "openSubsonic": True}
+    if error:
+        base["error"] = error
+    base.update(body or {})
+    fmt = (P("f") or "xml").lower()
+    if fmt in ("json", "jsonp"):
+        txt = json.dumps({"subsonic-response": base}, ensure_ascii=False)
+        cb = P("callback")
+        if fmt == "jsonp" and cb and re.match(r"^[A-Za-z_$][\w$.]{0,60}$", cb):
+            return Response(f"{cb}({txt});", media_type="application/javascript")
+        return Response(txt, media_type="application/json")
+    root = _ET.Element("subsonic-response", {"xmlns": "http://subsonic.org/restapi"})
+    for k, v in base.items():
+        if isinstance(v, (dict, list)):
+            _sub_xml(root, k, v)
+        else:
+            root.set(k, "true" if v is True else "false" if v is False else str(v))
+    return Response(b'<?xml version="1.0" encoding="UTF-8"?>' + _ET.tostring(root, encoding="utf-8"),
+                    media_type="text/xml; charset=utf-8")
+
+# ── Helpers ──
+def _int(P, k, d=0, lo=0, hi=10**9):
+    try:
+        return max(lo, min(hi, int(P(k))))
+    except (TypeError, ValueError):
+        return d
+
+def _need(P, k):
+    v = P(k)
+    if v in (None, ""):
+        raise _SubErr(10, f"Required parameter is missing: {k}")
+    return v
+
+def _song(idx, sid):
+    try:
+        s = idx["songs"].get(int(sid))
+    except (TypeError, ValueError):
+        s = None
+    if not s:
+        raise _SubErr(70, "Song not found")
+    return s
+
+def _sort_name(n: str) -> str:
+    n = (n or "").strip()
+    for a in _SUB_ARTICLES.split():
+        if n.lower().startswith(a.lower() + " "):
+            return n[len(a) + 1:]
+    return n
+
+def _artist_index(idx, ctx, dir_style=False):
+    groups: dict = {}
+    for ar in sorted(idx["artists"].values(), key=lambda a: _sort_name(a["name"]).lower()):
+        ch = _sort_name(ar["name"])[:1].upper()
+        ch = ch if ch.isalpha() else "#"
+        groups.setdefault(ch, []).append({"id": ar["id"], "name": ar["name"]} if dir_style else ctx.artist(ar))
+    return [{"name": k, "artist": v} for k, v in groups.items()]
+
+def _folder_pls():
+    db = get_db()
+    rows = db.execute("""SELECT playlist, COUNT(*) AS n, SUM(duration) AS d, MIN(added_at) AS c, MAX(added_at) AS u
+                         FROM tracks WHERE playlist IS NOT NULL GROUP BY playlist""").fetchall()
+    db.close()
+    return {_sid("fp-", r["playlist"]): r for r in rows}
+
+def _pl_obj(db, r, ctx, entries=False, idx=None):
+    ids = [x[0] for x in db.execute("SELECT track_id FROM user_playlist_tracks WHERE playlist_id=? ORDER BY pos", (r["id"],))]
+    songs = [idx["songs"][i] for i in ids if idx and i in idx["songs"]] if idx else []
+    o = {"id": str(r["id"]), "name": r["name"], "comment": r["description"] or "", "owner": _owner_name(db, r["user_id"]),
+         "public": bool(r["shared"]), "songCount": len(ids), "created": _iso(r["created"]), "changed": _iso(r["updated"]),
+         "coverArt": f"pl-{r['id']}"}
+    o["duration"] = sum(int(s["duration"] or 0) for s in songs) if idx else 0
+    if entries:
+        o["entry"] = [ctx.song(s) for s in songs]
+    return o
+
+def _fpl_obj(key, r, ctx, idx=None):
+    o = {"id": key, "name": state["playlist_names"].get(r["playlist"], r["playlist"]), "comment": "Folder playlist",
+         "owner": state.get("name") or "leon.music", "public": True, "songCount": r["n"], "duration": int(r["d"] or 0),
+         "created": _iso(r["c"]), "changed": _iso(r["u"]), "coverArt": key, "readonly": True}
+    if idx is not None:
+        o["entry"] = [ctx.song(s) for s in sorted((s for s in idx["songs"].values() if s["playlist"] == r["playlist"]),
+                                                  key=lambda s: (s["album"] or "", s["disc_num"] or 1, s["track_num"] or 0))]
+    return o
+
+def _own_pl(db, pid, ctx):
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        raise _SubErr(70, "Playlist not found")
+    r = db.execute("SELECT * FROM user_playlists WHERE id=?", (pid,)).fetchone()
+    if not r:
+        raise _SubErr(70, "Playlist not found")
+    if r["user_id"] != ctx.uid:
+        raise _SubErr(50, "Only the owner can change this playlist")
+    return r
+
+def _cover_bytes(cid: str, idx) -> Optional[bytes]:
+    """coverArt ids: al-… (album), ar-… (artist photo or album art), pl-N (user playlist), fp-… (folder playlist), song id, or a raw cover hash."""
+    cover_id = None
+    if cid.startswith("al-") and cid in idx["albums"]:
+        cover_id = idx["albums"][cid]["cover"]
+    elif cid.startswith("ar-") and cid in idx["artists"]:
+        ar = idx["artists"][cid]
+        jpg, _ = _pic_paths(ar["name"])
+        if jpg.exists():
+            return jpg.read_bytes()
+        cover_id = ar["cover"]
+    elif cid.startswith("pl-"):
+        f = COVERS_DIR / f"u{cid[3:]}.jpg"
+        if cid[3:].isdigit() and f.exists():
+            return f.read_bytes()
+        db = get_db()
+        r = db.execute("""SELECT t.cover_id FROM user_playlist_tracks p JOIN tracks t ON t.id=p.track_id
+                          WHERE p.playlist_id=? AND t.cover_id IS NOT NULL ORDER BY p.pos LIMIT 1""", (cid[3:],)).fetchone()
+        db.close(); cover_id = r[0] if r else None
+    elif cid.startswith("fp-"):
+        r = _folder_pls().get(cid)
+        if r:
+            f = COVERS_DIR / f"{_safe_name(r['playlist'])}.jpg"
+            if f.exists():
+                return f.read_bytes()
+            cover_id = next((s["cover_id"] for s in idx["songs"].values() if s["playlist"] == r["playlist"] and s["cover_id"]), None)
+    elif cid.isdigit() and int(cid) in idx["songs"]:
+        cover_id = idx["songs"][int(cid)]["cover_id"]
+    elif re.fullmatch(r"[0-9a-f]{32}", cid):
+        cover_id = cid
+    if not cover_id:
+        return None
+    db = get_db()
+    r = db.execute("SELECT data FROM covers WHERE id=?", (cover_id,)).fetchone()
+    db.close()
+    return r[0] if r else None
+
+def _sub_stream(s: dict, P, download=False):
+    path = Path(s["path"])
+    if not path.exists():
+        raise _SubErr(70, "File missing from disk")
+    fmt = (P("format") or "").lower()
+    maxbr = _int(P, "maxBitRate", 0, 0, 1000)
+    src_kbps = int((s["bitrate"] or 0) // 1000)
+    want_mp3 = fmt in ("mp3",) and path.suffix.lower() != ".mp3"
+    if download or fmt == "raw" or not FFMPEG or not (want_mp3 or (maxbr and (not src_kbps or src_kbps > maxbr + 8))):
+        headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(path.name)}"} if download else None
+        return FileResponse(str(path), media_type=mimetypes.guess_type(str(path))[0] or "audio/mpeg", headers=headers)
+    kbps = maxbr or 192
+    off = _int(P, "timeOffset", 0, 0, 86400)
+    cmd = [FFMPEG, "-hide_banner", "-loglevel", "error", "-nostdin"] + (["-ss", str(off)] if off else []) + \
+          ["-i", str(path), "-map", "0:a:0", "-vn", "-c:a", "libmp3lame", "-b:a", f"{kbps}k", "-f", "mp3", "-"]
+    flags = getattr(_subprocess, "CREATE_NO_WINDOW", 0)
+    proc = _subprocess.Popen(cmd, stdout=_subprocess.PIPE, stderr=_subprocess.DEVNULL, creationflags=flags)
+    def gen():
+        try:
+            while True:
+                chunk = proc.stdout.read(32768)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            try: proc.kill()
+            except Exception: pass
+    headers = {}
+    if P("estimateContentLength") == "true":
+        headers["Content-Length"] = str(int(max(0, (s["duration"] or 0) - off) * kbps * 125))
+    return StreamingResponse(gen(), media_type="audio/mpeg", headers=headers)
+
+def _sub_log_play(ctx, s, when: float):
+    db = get_db()
+    listener = f"sub-{ctx.uid}"
+    dup = db.execute("SELECT 1 FROM plays WHERE track_id=? AND listener=? AND played_at>?",
+                     (s["id"], listener, when - _PLAY_DEDUPE_SECS)).fetchone()
+    if not dup:
+        db.execute("INSERT INTO plays(track_id,listener,played_at,user_id) VALUES(?,?,?,?)",
+                   (s["id"], listener, when, ctx.uid or None))
+        db.commit()
+    db.close()
+
+def _albums_list(idx, ctx, P):
+    typ = (P("type") or "alphabeticalByName")
+    size, off = _int(P, "size", 10, 1, 500), _int(P, "offset", 0, 0)
+    als = list(idx["albums"].values())
+    if typ == "random":
+        als = _random.sample(als, min(size, len(als))); off = 0
+    elif typ == "newest":
+        als.sort(key=lambda a: a["created"] or "", reverse=True)
+    elif typ == "alphabeticalByArtist":
+        als.sort(key=lambda a: (_sort_name(a["artist"]).lower(), a["name"].lower()))
+    elif typ in ("frequent", "highest"):
+        pl = ctx.plays(); als = [a for a in als if any(pl.get(i) for i in a["songs"])]
+        als.sort(key=lambda a: -sum(pl.get(i, 0) for i in a["songs"]))
+    elif typ == "recent":
+        db = get_db()
+        last = {r[0]: r[1] for r in db.execute("SELECT track_id, MAX(played_at) FROM plays WHERE user_id IS ? GROUP BY track_id", (ctx.uid or None,))}
+        db.close()
+        als = [a for a in als if any(i in last for i in a["songs"])]
+        als.sort(key=lambda a: -max(last.get(i, 0) for i in a["songs"]))
+    elif typ == "starred":
+        st = ctx.stars("album"); als = [a for a in als if a["id"] in st]
+        als.sort(key=lambda a: a["name"].lower())
+    elif typ == "byYear":
+        y0, y1 = _int(P, "fromYear", 0), _int(P, "toYear", 9999)
+        lo, hi = min(y0, y1), max(y0, y1)
+        als = [a for a in als if a["year"] and lo <= int(a["year"]) <= hi]
+        als.sort(key=lambda a: int(a["year"]), reverse=y0 > y1)
+    elif typ == "byGenre":
+        g = (_need(P, "genre")).lower()
+        als = [a for a in als if any((idx["songs"][i]["genre"] or "").lower() == g for i in a["songs"])]
+        als.sort(key=lambda a: a["name"].lower())
+    else:
+        als.sort(key=lambda a: a["name"].lower())
+    return [ctx.album(a) for a in als[off:off + size]]
+
+def _match(q: str, *fields) -> bool:
+    return all(any(w in (f or "").lower() for f in fields) for w in q.split())
+
+# ── The endpoint ──
+@api.api_route("/rest/{method}", methods=["GET", "POST"])
+async def subsonic(method: str, req: Request):
+    form = {}
+    if req.method == "POST" and "application/x-www-form-urlencoded" in req.headers.get("content-type", ""):
+        form = await req.form()
+    def P(k):
+        v = req.query_params.get(k)
+        return v if v is not None else (form.get(k) if form else None)
+    def PL(k):
+        return list(req.query_params.getlist(k)) + (list(form.getlist(k)) if form else [])
+    method = method[:-5] if method.endswith(".view") else method
+    try:
+        if method in ("getOpenSubsonicExtensions",):
+            return _sub_resp(P, {"openSubsonicExtensions": [{"name": "formPost", "versions": [1]},
+                                                            {"name": "songLyrics", "versions": [1]},
+                                                            {"name": "transcodeOffset", "versions": [1]}]})
+        ctx = await run_in_threadpool(_sub_auth, req, P)
+        return await run_in_threadpool(_sub_dispatch, method, ctx, P, PL)
+    except _SubErr as e:
+        return _sub_resp(P, status="failed", error={"code": e.code, "message": e.msg})
+    except HTTPException as e:
+        return _sub_resp(P, status="failed", error={"code": 0 if e.status_code != 429 else 40, "message": str(e.detail)})
+
+def _sub_dispatch(m: str, ctx: _SubCtx, P, PL):
+    idx = _sub_index()
+    R = lambda body=None: _sub_resp(P, body)
+    if m == "ping":
+        return R()
+    if m == "getLicense":
+        return R({"license": {"valid": True, "email": "", "licenseExpires": "2099-12-31T00:00:00Z"}})
+    if m == "getMusicFolders":
+        return R({"musicFolders": {"musicFolder": [{"id": 1, "name": state.get("name") or "Music"}]}})
+    if m == "getIndexes":
+        return R({"indexes": {"lastModified": int(_now() * 1000), "ignoredArticles": _SUB_ARTICLES,
+                              "index": _artist_index(idx, ctx, dir_style=True)}})
+    if m == "getArtists":
+        return R({"artists": {"ignoredArticles": _SUB_ARTICLES, "index": _artist_index(idx, ctx)}})
+    if m == "getArtist":
+        ar = idx["artists"].get(_need(P, "id"))
+        if not ar: raise _SubErr(70, "Artist not found")
+        als = sorted((idx["albums"][a] for a in ar["albums"]), key=lambda a: (-(int(a["year"] or 0)), a["name"].lower()))
+        return R({"artist": {**ctx.artist(ar), "album": [ctx.album(a) for a in als]}})
+    if m == "getAlbum":
+        al = idx["albums"].get(_need(P, "id"))
+        if not al: raise _SubErr(70, "Album not found")
+        return R({"album": {**ctx.album(al), "song": [ctx.song(idx["songs"][i]) for i in al["songs"]]}})
+    if m == "getSong":
+        return R({"song": ctx.song(_song(idx, _need(P, "id")))})
+    if m == "getMusicDirectory":
+        i = _need(P, "id")
+        if i in idx["artists"]:
+            ar = idx["artists"][i]
+            return R({"directory": {"id": ar["id"], "name": ar["name"], "parent": "1",
+                                    "child": [ctx.album(idx["albums"][a]) for a in ar["albums"]]}})
+        if i in idx["albums"]:
+            al = idx["albums"][i]
+            return R({"directory": {"id": al["id"], "name": al["name"], "parent": al["artistId"],
+                                    "child": [ctx.song(idx["songs"][s]) for s in al["songs"]]}})
+        raise _SubErr(70, "Directory not found")
+    if m in ("getAlbumList", "getAlbumList2"):
+        return R({"albumList2" if m.endswith("2") else "albumList": {"album": _albums_list(idx, ctx, P)}})
+    if m == "getRandomSongs":
+        pool = list(idx["songs"].values())
+        g = (P("genre") or "").lower()
+        y0, y1 = _int(P, "fromYear", 0), _int(P, "toYear", 9999)
+        pool = [s for s in pool if (not g or (s["genre"] or "").lower() == g) and
+                (not (P("fromYear") or P("toYear")) or (s["year"] and y0 <= int(s["year"]) <= y1))]
+        pick = _random.sample(pool, min(_int(P, "size", 10, 1, 500), len(pool)))
+        return R({"randomSongs": {"song": [ctx.song(s) for s in pick]}})
+    if m == "getSongsByGenre":
+        g = _need(P, "genre").lower()
+        hits = sorted((s for s in idx["songs"].values() if (s["genre"] or "").lower() == g), key=lambda s: (s["artist"] or "", s["album"] or "", s["track_num"] or 0))
+        off, n = _int(P, "offset", 0), _int(P, "count", 10, 1, 500)
+        return R({"songsByGenre": {"song": [ctx.song(s) for s in hits[off:off + n]]}})
+    if m == "getGenres":
+        gs: dict = {}
+        for s in idx["songs"].values():
+            if s["genre"]:
+                g = gs.setdefault(s["genre"], {"songs": 0, "albums": set()})
+                g["songs"] += 1; g["albums"].add(s["albumId"])
+        return R({"genres": {"genre": [{"value": k, "songCount": v["songs"], "albumCount": len(v["albums"])}
+                                       for k, v in sorted(gs.items(), key=lambda kv: kv[0].lower())]}})
+    if m in ("search2", "search3", "search"):
+        q = (P("query") or P("any") or "").strip().strip('"').lower()
+        def page(items, key):
+            return items[_int(P, key + "Offset", 0):][:_int(P, key + "Count", 20, 0, 5000)]
+        ars = sorted(idx["artists"].values(), key=lambda a: _sort_name(a["name"]).lower())
+        als = sorted(idx["albums"].values(), key=lambda a: a["name"].lower())
+        sgs = sorted(idx["songs"].values(), key=lambda s: s["id"])
+        if q:
+            ars = [a for a in ars if _match(q, a["name"])]
+            als = [a for a in als if _match(q, a["name"], a["artist"])]
+            sgs = [s for s in sgs if _match(q, s["title"], s["artist"], s["album"])]
+        out = {"artist": [ctx.artist(a) if m == "search3" else {"id": a["id"], "name": a["name"]} for a in page(ars, "artist")],
+               "album": [ctx.album(a) for a in page(als, "album")],
+               "song": [ctx.song(s) for s in page(sgs, "song")]}
+        return R({"searchResult3" if m == "search3" else "searchResult2": out})
+    if m == "getPlaylists":
+        db = get_db()
+        rows = db.execute("SELECT * FROM user_playlists WHERE user_id=? OR shared=1 ORDER BY updated DESC", (ctx.uid,)).fetchall()
+        pls = [_pl_obj(db, r, ctx, idx=idx) for r in rows]
+        db.close()
+        pls += [_fpl_obj(k, r, ctx) for k, r in _folder_pls().items()]
+        return R({"playlists": {"playlist": pls}})
+    if m == "getPlaylist":
+        i = _need(P, "id")
+        if i.startswith("fp-"):
+            r = _folder_pls().get(i)
+            if not r: raise _SubErr(70, "Playlist not found")
+            return R({"playlist": _fpl_obj(i, r, ctx, idx)})
+        db = get_db()
+        try:
+            r = db.execute("SELECT * FROM user_playlists WHERE id=?", (int(i) if i.isdigit() else -1,)).fetchone()
+            if not r or (r["user_id"] != ctx.uid and not r["shared"]):
+                raise _SubErr(70, "Playlist not found")
+            return R({"playlist": _pl_obj(db, r, ctx, True, idx)})
+        finally:
+            db.close()
+    if m == "createPlaylist":
+        ids = [int(x) for x in PL("songId") if str(x).isdigit() and int(x) in idx["songs"]]
+        db = get_db()
+        try:
+            if P("playlistId"):
+                r = _own_pl(db, P("playlistId"), ctx); pid = r["id"]
+                db.execute("DELETE FROM user_playlist_tracks WHERE playlist_id=?", (pid,))
+                if P("name"):
+                    db.execute("UPDATE user_playlists SET name=? WHERE id=?", (_clean_pl_name(P("name")), pid))
+            else:
+                pid = db.execute("INSERT INTO user_playlists(user_id,name,description,shared,created,updated) VALUES(?,?,?,?,?,?)",
+                                 (ctx.uid, _clean_pl_name(_need(P, "name")), "", 0, _now(), _now())).lastrowid
+            for n, tid in enumerate(ids[:5000]):
+                db.execute("INSERT INTO user_playlist_tracks(playlist_id,track_id,pos,added) VALUES(?,?,?,?)", (pid, tid, n, _now()))
+            db.execute("UPDATE user_playlists SET updated=? WHERE id=?", (_now(), pid))
+            db.commit()
+            return R({"playlist": _pl_obj(db, db.execute("SELECT * FROM user_playlists WHERE id=?", (pid,)).fetchone(), ctx, True, idx)})
+        finally:
+            db.close()
+    if m == "updatePlaylist":
+        db = get_db()
+        try:
+            r = _own_pl(db, _need(P, "playlistId"), ctx); pid = r["id"]
+            if P("name"): db.execute("UPDATE user_playlists SET name=? WHERE id=?", (_clean_pl_name(P("name")), pid))
+            if P("comment") is not None: db.execute("UPDATE user_playlists SET description=? WHERE id=?", (str(P("comment"))[:300], pid))
+            if P("public") is not None: db.execute("UPDATE user_playlists SET shared=? WHERE id=?", (1 if P("public") == "true" else 0, pid))
+            rows = [x[0] for x in db.execute("SELECT rowid FROM user_playlist_tracks WHERE playlist_id=? ORDER BY pos", (pid,))]
+            drop = {int(x) for x in PL("songIndexToRemove") if str(x).isdigit()}
+            for k in drop:
+                if k < len(rows):
+                    db.execute("DELETE FROM user_playlist_tracks WHERE rowid=?", (rows[k],))
+            top = db.execute("SELECT COALESCE(MAX(pos),-1) FROM user_playlist_tracks WHERE playlist_id=?", (pid,)).fetchone()[0]
+            for n, x in enumerate(PL("songIdToAdd")):
+                if str(x).isdigit() and int(x) in idx["songs"]:
+                    db.execute("INSERT INTO user_playlist_tracks(playlist_id,track_id,pos,added) VALUES(?,?,?,?)", (pid, int(x), top + 1 + n, _now()))
+            db.execute("UPDATE user_playlists SET updated=? WHERE id=?", (_now(), pid))
+            db.commit()
+        finally:
+            db.close()
+        if P("public") == "true" and not r["shared"]:
+            threading.Thread(target=email_playlist_shared, args=(ctx.uid, r["id"]), daemon=True).start()
+        return R()
+    if m == "deletePlaylist":
+        db = get_db()
+        try:
+            r = _own_pl(db, _need(P, "id"), ctx)
+            db.execute("DELETE FROM user_playlist_tracks WHERE playlist_id=?", (r["id"],))
+            db.execute("DELETE FROM user_playlists WHERE id=?", (r["id"],)); db.commit()
+        finally:
+            db.close()
+        for f in (COVERS_DIR / f"u{r['id']}.jpg", COVERS_DIR / f"u{r['id']}.src.jpg"):
+            try: f.unlink()
+            except OSError: pass
+        return R()
+    if m in ("stream", "download"):
+        return _sub_stream(_song(idx, _need(P, "id")), P, download=m == "download")
+    if m == "getCoverArt":
+        data = _cover_bytes(_need(P, "id"), idx)
+        if not data: raise _SubErr(70, "Cover art not found")
+        size = _int(P, "size", 0, 0, 3000)
+        if size:
+            try:
+                im = Image.open(io.BytesIO(data)).convert("RGB"); im.thumbnail((size, size))
+                b = io.BytesIO(); im.save(b, "JPEG", quality=88); data = b.getvalue()
+            except Exception:
+                pass
+        return Response(data, media_type="image/jpeg", headers={"Cache-Control": "public,max-age=86400"})
+    if m == "getAvatar":
+        db = get_db(); r = db.execute("SELECT avatar FROM users WHERE username=?", (P("username") or ctx.name,)).fetchone(); db.close()
+        if r and (r[0] or "").startswith("data:image/"):
+            head, _, b64 = r[0].partition(",")
+            return Response(base64.b64decode(b64), media_type=head[5:].split(";")[0])
+        raise _SubErr(70, "No avatar")
+    if m == "scrobble":
+        ids, times = PL("id"), PL("time")
+        sub = P("submission") != "false"
+        for k, sid in enumerate(ids):
+            s = _song(idx, sid)
+            try:
+                when = int(times[k]) / 1000 if k < len(times) else _now()
+            except ValueError:
+                when = _now()
+            if sub:
+                _sub_log_play(ctx, s, when)
+                scrobble_out(ctx.uid, s["id"], min(when, _now()))
+            else:
+                scrobble_out(ctx.uid, s["id"], when, now_playing=True)
+        return R()
+    if m in ("star", "unstar"):
+        db = get_db()
+        for sid in PL("id"):
+            if str(sid).isdigit() and int(sid) in idx["songs"]:
+                if m == "star": db.execute("INSERT OR IGNORE INTO likes(user_id,track_id,created) VALUES(?,?,?)", (ctx.uid, int(sid), _now()))
+                else: db.execute("DELETE FROM likes WHERE user_id=? AND track_id=?", (ctx.uid, int(sid)))
+            elif sid in idx["albums"] or sid in idx["artists"]:
+                kind = "album" if sid in idx["albums"] else "artist"
+                if m == "star": db.execute("INSERT OR IGNORE INTO sub_stars VALUES(?,?,?,?)", (ctx.uid, kind, sid, _now()))
+                else: db.execute("DELETE FROM sub_stars WHERE user_id=? AND kind=? AND item=?", (ctx.uid, kind, sid))
+        for kind, key in (("album", "albumId"), ("artist", "artistId")):
+            for item in PL(key):
+                if m == "star": db.execute("INSERT OR IGNORE INTO sub_stars VALUES(?,?,?,?)", (ctx.uid, kind, item, _now()))
+                else: db.execute("DELETE FROM sub_stars WHERE user_id=? AND kind=? AND item=?", (ctx.uid, kind, item))
+        db.commit(); db.close()
+        return R()
+    if m in ("getStarred", "getStarred2"):
+        out = {"artist": [ctx.artist(idx["artists"][a]) for a in ctx.stars("artist") if a in idx["artists"]],
+               "album": [ctx.album(idx["albums"][a]) for a in ctx.stars("album") if a in idx["albums"]],
+               "song": [ctx.song(idx["songs"][s]) for s in sorted(ctx.stars("song"), key=lambda i: -ctx.stars("song")[i]) if s in idx["songs"]]}
+        return R({"starred2" if m.endswith("2") else "starred": out})
+    if m == "setRating":
+        return R()
+    if m == "getUser":
+        name = P("username") or ctx.name
+        if name.lower() != ctx.name.lower() and not ctx.admin:
+            raise _SubErr(50, "You can only look at your own account")
+        db = get_db()
+        r = db.execute("SELECT username,email,COALESCE(is_admin,0) AS a FROM users WHERE username=?", (name,)).fetchone()
+        db.close()
+        if not r and name.lower() != "admin":
+            raise _SubErr(70, "User not found")
+        adm = (r["a"] == 1) if r else True
+        roles = dict.fromkeys(("streamRole", "playlistRole", "downloadRole", "coverArtRole", "commentRole", "settingsRole", "shareRole"), True)
+        roles.update(adminRole=adm, uploadRole=False, podcastRole=False, jukeboxRole=False, videoConversionRole=False)
+        return R({"user": {"username": r["username"] if r else "admin", "email": (r["email"] or "") if r else "",
+                           "scrobblingEnabled": True, **roles, "folder": [1]}})
+    if m == "getLyrics":
+        a, t = (P("artist") or "").lower(), (P("title") or "").lower()
+        s = next((s for s in idx["songs"].values() if (s["title"] or "").lower() == t and (not a or a in (s["artist"] or "").lower())), None)
+        if not s:
+            return R({"lyrics": {}})
+        ly = api_lyrics(s["id"])
+        text = "\n".join(l["text"] for l in ly["synced"]) if ly["synced"] else ly["plain"]
+        return R({"lyrics": {"artist": s["artist"], "title": s["title"], "value": text}})
+    if m == "getLyricsBySongId":
+        s = _song(idx, _need(P, "id"))
+        ly = api_lyrics(s["id"])
+        if not ly["found"] or ly.get("instrumental"):
+            return R({"lyricsList": {"structuredLyrics": []}})
+        base = {"displayArtist": s["artist"] or "", "displayTitle": s["title"] or "", "lang": "xxx", "offset": 0}
+        if ly["synced"]:
+            st = {**base, "synced": True, "line": [{"start": int(l["t"] * 1000), "value": l["text"]} for l in ly["synced"]]}
+        else:
+            st = {**base, "synced": False, "line": [{"value": l} for l in ly["plain"].splitlines()]}
+        return R({"lyricsList": {"structuredLyrics": [st]}})
+    if m == "getInternetRadioStations":
+        sts = [{"id": str(s.get("id")), "name": s.get("name"), "streamUrl": s.get("url"), "homePageUrl": ""}
+               for s in api_radio_stations() if s.get("url")]
+        return R({"internetRadioStations": {"internetRadioStation": sts}})
+    if m == "getNowPlaying":
+        return R({"nowPlaying": {}})
+    if m == "getScanStatus":
+        return R({"scanStatus": {"scanning": bool(state["scanning"]), "count": len(idx["songs"])}})
+    if m == "startScan":
+        if not ctx.admin: raise _SubErr(50, "Only admins can start a scan")
+        if not state["scanning"]:
+            threading.Thread(target=scan_library, daemon=True).start()
+        return R({"scanStatus": {"scanning": True, "count": len(idx["songs"])}})
+    if m in ("getArtistInfo", "getArtistInfo2"):
+        return R({"artistInfo2" if m.endswith("2") else "artistInfo": {"biography": "", "similarArtist": []}})
+    if m in ("getAlbumInfo", "getAlbumInfo2"):
+        return R({"albumInfo": {"notes": ""}})
+    if m in ("getSimilarSongs", "getSimilarSongs2"):
+        i = _need(P, "id")
+        seed = idx["songs"].get(int(i)) if i.isdigit() else None
+        if not seed and i in idx["albums"]: seed = idx["songs"][idx["albums"][i]["songs"][0]]
+        if not seed and i in idx["artists"]: seed = idx["songs"][idx["albums"][idx["artists"][i]["albums"][0]]["songs"][0]]
+        pool = [s for s in idx["songs"].values() if seed and s["genre"] and s["genre"] == seed["genre"] and s["id"] != seed["id"]]
+        pick = _random.sample(pool, min(_int(P, "count", 50, 1, 500), len(pool)))
+        return R({"similarSongs2" if m.endswith("2") else "similarSongs": {"song": [ctx.song(s) for s in pick]}})
+    if m == "getTopSongs":
+        a = _need(P, "artist").lower()
+        mine = [s for s in idx["songs"].values() if (s["artist"] or "").lower() == a or idx["artists"][s["artistId"]]["name"].lower() == a]
+        db = get_db(); pc = {r[0]: r[1] for r in db.execute("SELECT track_id,COUNT(*) FROM plays GROUP BY track_id")}; db.close()
+        mine.sort(key=lambda s: -pc.get(s["id"], 0))
+        return R({"topSongs": {"song": [ctx.song(s) for s in mine[:_int(P, "count", 50, 1, 500)]]}})
+    if m == "getBookmarks":
+        return R({"bookmarks": {}})
+    if m == "getPlayQueue":
+        return R()
+    if m in ("savePlayQueue", "createBookmark", "deleteBookmark"):
+        return R()
+    if m == "getShares":
+        return R({"shares": {}})
+    if m == "getPodcasts":
+        return R({"podcasts": {}})
+    if m == "getNewestPodcasts":
+        return R({"newestPodcasts": {}})
+    if m == "getChatMessages":
+        return R({"chatMessages": {}})
+    if m == "getVideos":
+        return R({"videos": {}})
+    raise _SubErr(0, f"leon.music doesn't support {m[:40]} yet")
+
+# ── Scrobbling to Last.fm and ListenBrainz ──
+LASTFM_API = "https://ws.audioscrobbler.com/2.0/"
+LASTFM_AUTH = "https://www.last.fm/api/auth/"
+LB_API = "https://api.listenbrainz.org"
+_lfm_states: dict = {}
+
+def _lfm_cfg() -> dict:
+    return load_config().get("lastfm") or {}
+
+def _lfm_call(params: dict, post=True) -> dict:
+    c = _lfm_cfg()
+    p = {**params, "api_key": c["api_key"]}
+    p["api_sig"] = hashlib.md5(("".join(k + str(p[k]) for k in sorted(p)) + c["secret"]).encode("utf-8")).hexdigest()
+    p["format"] = "json"
+    from urllib.parse import urlencode as _ue
+    data = _ue(p).encode()
+    rq = urllib.request.Request(LASTFM_API, data=data if post else None,
+                                headers={"User-Agent": f"leon.music/{APP_VERSION}", "Content-Type": "application/x-www-form-urlencoded"})
+    if not post:
+        rq = urllib.request.Request(LASTFM_API + "?" + data.decode(), headers={"User-Agent": f"leon.music/{APP_VERSION}"})
+    try:
+        with urllib.request.urlopen(rq, timeout=15) as r:
+            out = json.loads(r.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        try: out = json.loads(e.read().decode("utf-8", "replace"))
+        except Exception: out = {}
+        if "error" not in out:
+            raise RuntimeError(f"Last.fm HTTP {e.code}")
+    if "error" in out:
+        raise RuntimeError(f"Last.fm error {out['error']}: {out.get('message', '')}")
+    return out
+
+def _lb_call(path: str, token: str, body=None) -> dict:
+    rq = urllib.request.Request(LB_API + path, data=json.dumps(body).encode() if body is not None else None,
+                                headers={"Authorization": f"Token {token}", "Content-Type": "application/json",
+                                         "User-Agent": f"leon.music/{APP_VERSION}"})
+    try:
+        with urllib.request.urlopen(rq, timeout=15) as r:
+            return json.loads(r.read().decode("utf-8", "replace") or "{}")
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"ListenBrainz HTTP {e.code}")
+
+def _scrobble_send(uid: int, service: str, payload: dict) -> bool:
+    """Send one scrobble/now-playing. Returns False on a network/server error (so it can be retried)."""
+    db = get_db()
+    r = db.execute("SELECT lastfm_session,lb_token FROM users WHERE id=?", (uid,)).fetchone()
+    db.close()
+    if not r:
+        return True
+    try:
+        if service == "lastfm" and r["lastfm_session"] and _lfm_cfg().get("api_key"):
+            m = "track.updateNowPlaying" if payload.get("now") else "track.scrobble"
+            p = {"method": m, "sk": r["lastfm_session"], "artist": payload["artist"], "track": payload["title"]}
+            if payload.get("album"): p["album"] = payload["album"]
+            if payload.get("duration"): p["duration"] = int(payload["duration"])
+            if not payload.get("now"): p["timestamp"] = int(payload["ts"])
+            _lfm_call(p)
+        elif service == "listenbrainz" and r["lb_token"]:
+            meta = {"artist_name": payload["artist"], "track_name": payload["title"],
+                    "additional_info": {"media_player": "leon.music", "submission_client": "leon.music",
+                                        "submission_client_version": APP_VERSION}}
+            if payload.get("album"): meta["release_name"] = payload["album"]
+            if payload.get("duration"): meta["additional_info"]["duration_ms"] = int(payload["duration"] * 1000)
+            listen = {"track_metadata": meta}
+            if not payload.get("now"): listen["listened_at"] = int(payload["ts"])
+            _lb_call("/1/submit-listens", r["lb_token"], {"listen_type": "playing_now" if payload.get("now") else "single", "payload": [listen]})
+        return True
+    except RuntimeError as e:
+        msg = str(e)
+        if service == "lastfm" and re.search(r"error (9|4|14|26):", msg):      # session revoked/key suspended: drop it
+            print(f"[scrobble] Last.fm: {msg}", file=sys.stderr); return True
+        if "HTTP 401" in msg:
+            return True
+        return payload.get("now", False)                          # now-playing isn't worth retrying
+    except Exception:
+        return payload.get("now", False)
+
+def scrobble_out(uid: int, track_id: int, started: float, now_playing: bool = False):
+    """Queue a scrobble (or now-playing update) for every service this user connected, in the background."""
+    if not uid:
+        return
+    db = get_db()
+    u = db.execute("SELECT lastfm_session,lb_token FROM users WHERE id=?", (uid,)).fetchone()
+    t = db.execute("SELECT title,artist,album,album_artist,duration FROM tracks WHERE id=?", (track_id,)).fetchone()
+    db.close()
+    if not u or not t or not (t["artist"] and t["title"]):
+        return
+    services = [s for s, on in (("lastfm", u["lastfm_session"] and _lfm_cfg().get("api_key")), ("listenbrainz", u["lb_token"])) if on]
+    if not services:
+        return
+    payload = {"artist": t["artist"], "title": t["title"], "album": t["album"] or "", "duration": t["duration"] or 0,
+               "ts": int(started), "now": now_playing}
+    def go():
+        for s in services:
+            if not _scrobble_send(uid, s, payload):
+                db = get_db()
+                db.execute("INSERT INTO scrobble_queue(user_id,service,payload,created) VALUES(?,?,?,?)",
+                           (uid, s, json.dumps(payload), _now()))
+                db.commit(); db.close()
+    threading.Thread(target=go, daemon=True).start()
+
+def _scrobble_retry():
+    """Retry scrobbles that failed (offline, service down). Gives up after a day."""
+    db = get_db()
+    rows = db.execute("SELECT * FROM scrobble_queue ORDER BY id LIMIT 200").fetchall()
+    db.close()
+    for r in rows:
+        ok = _scrobble_send(r["user_id"], r["service"], json.loads(r["payload"]))
+        db = get_db()
+        if ok or _now() - r["created"] > 86400 * 14:
+            db.execute("DELETE FROM scrobble_queue WHERE id=?", (r["id"],))
+        else:
+            db.execute("UPDATE scrobble_queue SET tries=tries+1 WHERE id=?", (r["id"],))
+        db.commit(); db.close()
+        if not ok:
+            break                                     # still offline: try the rest next time
+
+def _scrobble_loop():
+    while True:
+        sleep(300)
+        try:
+            _scrobble_retry()
+        except Exception as e:
+            print(f"[scrobble] retry: {e}", file=sys.stderr)
+
+# Player hooks (the web player calls these; Subsonic apps use /rest/scrobble)
+@api.post("/api/me/nowplaying/{track_id}")
+def api_nowplaying(track_id: int, req: Request):
+    u = _session_user(req)
+    if u and u["id"]:
+        scrobble_out(u["id"], track_id, _now(), now_playing=True)
+    return {"status": "ok"}
+
+@api.post("/api/me/scrobble/{track_id}")
+async def api_scrobble(track_id: int, req: Request):
+    u = _session_user(req)
+    if u and u["id"]:
+        try:
+            started = float((await req.json()).get("started") or _now())
+        except Exception:
+            started = _now()
+        scrobble_out(u["id"], track_id, min(started, _now()))
+    return {"status": "ok"}
+
+# ── Settings: app password + scrobbling connections ──
+def _subsonic_user(req: Request) -> dict:
+    u = _session_user(req)
+    if not u:
+        if _is_admin(req):
+            return {"id": 0, "username": "admin"}
+        raise HTTPException(401, "Log in first")
+    return u
+
+@api.get("/api/me/connections")
+def api_connections(req: Request):
+    u = _subsonic_user(req)
+    if u["id"] == 0:
+        pw = load_config().get("subsonic_admin_pw") or ""
+        row = None
+    else:
+        db = get_db()
+        row = db.execute("SELECT subsonic_pw,lastfm_user,lb_user FROM users WHERE id=?", (u["id"],)).fetchone()
+        db.close()
+        pw = row["subsonic_pw"] or ""
+    return {"username": u["username"], "app_password": pw, "accounts": u["id"] != 0,
+            "lastfm": {"available": bool(_lfm_cfg().get("api_key") and _lfm_cfg().get("secret")),
+                       "user": (row["lastfm_user"] or "") if row else ""},
+            "listenbrainz": {"user": (row["lb_user"] or "") if row else ""}}
+
+@api.post("/api/me/app-password")
+def api_new_app_password(req: Request):
+    u = _subsonic_user(req)
+    pw = "-".join(secrets.token_hex(3) for _ in range(4))          # e.g. 3fa9c1-77b0e2-…, easy to type on a phone
+    if u["id"] == 0:
+        update_config(subsonic_admin_pw=pw)
+    else:
+        db = get_db(); db.execute("UPDATE users SET subsonic_pw=? WHERE id=?", (pw, u["id"])); db.commit(); db.close()
+    return {"app_password": pw}
+
+@api.delete("/api/me/app-password")
+def api_del_app_password(req: Request):
+    u = _subsonic_user(req)
+    if u["id"] == 0:
+        c = load_config(); c.pop("subsonic_admin_pw", None); save_config(c)
+    else:
+        db = get_db(); db.execute("UPDATE users SET subsonic_pw=NULL WHERE id=?", (u["id"],)); db.commit(); db.close()
+    return {"status": "ok"}
+
+@api.get("/api/me/lastfm/connect")
+def api_lastfm_connect(req: Request):
+    u = _require_user(req)
+    c = _lfm_cfg()
+    if not (c.get("api_key") and c.get("secret")):
+        raise HTTPException(400, "The admin hasn't added a Last.fm API key yet")
+    st = secrets.token_urlsafe(16)
+    _lfm_states[st] = (u["id"], _now())
+    cb = f"{_link_base(req)}/api/lastfm/callback?state={st}"
+    return {"url": f"{LASTFM_AUTH}?api_key={quote(c['api_key'])}&cb={quote(cb, safe='')}"}
+
+@api.get("/api/lastfm/callback")
+def api_lastfm_callback(req: Request, token: str = "", state: str = ""):
+    hit = _lfm_states.pop(state, None)
+    u = _session_user(req)
+    if not hit or _now() - hit[1] > 900 or not u or u["id"] != hit[0] or not token:
+        return _done_page("Couldn't connect Last.fm", "The link expired. Go back to Settings and press Connect again.")
+    try:
+        sess = _lfm_call({"method": "auth.getSession", "token": token}, post=False)["session"]
+    except Exception as e:
+        return _done_page("Couldn't connect Last.fm", str(e)[:200])
+    db = get_db()
+    db.execute("UPDATE users SET lastfm_session=?, lastfm_user=? WHERE id=?", (sess["key"], sess["name"], u["id"]))
+    db.commit(); db.close()
+    return RedirectResponse("/?view=settings&connected=lastfm", status_code=303)
+
+@api.delete("/api/me/lastfm")
+def api_lastfm_disconnect(req: Request):
+    u = _require_user(req)
+    db = get_db(); db.execute("UPDATE users SET lastfm_session=NULL, lastfm_user=NULL WHERE id=?", (u["id"],)); db.commit(); db.close()
+    return {"status": "ok"}
+
+@api.post("/api/me/listenbrainz")
+async def api_lb_connect(req: Request):
+    u = _require_user(req)
+    tok = str((await req.json()).get("token") or "").strip()
+    if not re.fullmatch(r"[0-9a-fA-F\-]{20,64}", tok):
+        raise HTTPException(400, "Paste the user token from listenbrainz.org/settings")
+    try:
+        v = await run_in_threadpool(_lb_call, f"/1/validate-token?token={quote(tok)}", tok)
+    except Exception:
+        raise HTTPException(502, "Couldn't reach ListenBrainz. Try again in a moment")
+    if not v.get("valid"):
+        raise HTTPException(400, "ListenBrainz says that token isn't valid")
+    db = get_db(); db.execute("UPDATE users SET lb_token=?, lb_user=? WHERE id=?", (tok, v.get("user_name") or "", u["id"])); db.commit(); db.close()
+    return {"user": v.get("user_name") or ""}
+
+@api.delete("/api/me/listenbrainz")
+def api_lb_disconnect(req: Request):
+    u = _require_user(req)
+    db = get_db(); db.execute("UPDATE users SET lb_token=NULL, lb_user=NULL WHERE id=?", (u["id"],)); db.commit(); db.close()
+    return {"status": "ok"}
+
+@api.get("/api/admin/lastfm")
+def api_admin_lastfm(req: Request):
+    _require_admin(req)
+    c = _lfm_cfg()
+    db = get_db()
+    n = db.execute("SELECT COUNT(*) FROM users WHERE lastfm_session IS NOT NULL").fetchone()[0]
+    m = db.execute("SELECT COUNT(*) FROM users WHERE lb_token IS NOT NULL").fetchone()[0]
+    db.close()
+    return {"api_key": c.get("api_key", ""), "has_secret": bool(c.get("secret")), "lastfm_users": n, "lb_users": m,
+            "callback": f"{_link_base(req)}/api/lastfm/callback"}
+
+@api.post("/api/admin/lastfm")
+async def api_admin_lastfm_set(req: Request):
+    _require_admin(req)
+    b = await req.json()
+    c = dict(_lfm_cfg())
+    if "api_key" in b:
+        v = str(b["api_key"] or "").strip()
+        if v and not re.fullmatch(r"[0-9a-fA-F]{32}", v):
+            raise HTTPException(400, "A Last.fm API key is 32 letters and numbers")
+        c["api_key"] = v
+    if b.get("secret"):
+        v = str(b["secret"]).strip()
+        if not re.fullmatch(r"[0-9a-fA-F]{32}", v):
+            raise HTTPException(400, "A Last.fm shared secret is 32 letters and numbers")
+        c["secret"] = v
+    update_config(lastfm=c)
+    return {"status": "ok"}
+
+_OPEN_PATHS.add("/api/lastfm/callback")
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
