@@ -17,6 +17,12 @@ A self-hosted music player that lives in your system tray. Point it at a folder 
 - **Light and dark themes**, responsive layout, mobile friendly.
 - Just two files: `leon_music.py` (server and tray app) and `frontend.html` (the player UI).
 
+## What's new in 2.2
+
+- **🎄 Christmas category**: a Christmas tile in Search (first in line from mid-November to early January) with everything Christmas on your server, special playlists (Christmas Classics, Cozy Christmas, Christmas Party, New Christmas Music) and your Holiday station when it's on air.
+- **🖼 Playlist cover designer**: design covers for your own playlists, and admins for folder playlists, with your own photo, gradients, overlays, title and subtitle styling, and any font installed on the server's computer.
+- **Fixed**: deprecation warnings and `WinError 10054` noise in the console on Windows, and unclosed-file warnings when skipping songs.
+
 ## What's new in 2.1
 
 - **♥ Likes & your own playlists**: heart songs into Liked Songs, create playlists from any song's ··· menu, drag to reorder, and share them with everyone on the server.
