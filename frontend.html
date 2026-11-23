@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>leon.music</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" id="favSvg"><link rel="alternate icon" href="/favicon.ico">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap">
 <style>
 :root{
@@ -1512,6 +1514,7 @@ function applyBrandColors(accent,tint){
   const root=document.documentElement.style,ok=v=>/^#[0-9a-f]{6}$/i.test(v||'');
   if(ok(accent)){root.setProperty('--accent',accent);root.setProperty('--accent2',_mixWhite(accent,.2));}
   root.setProperty('--hero-tint',ok(tint)?tint:(ok(accent)?accent:'#e5282a'));
+  const fav=document.getElementById('favSvg');if(fav&&ok(accent))fav.href='/favicon.svg?c='+accent.slice(1);   // follow the admin's accent colour
 }
 function applyBrand(st){
   applyBrandColors(st.accent,st.hero_tint);

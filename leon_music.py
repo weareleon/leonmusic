@@ -4160,6 +4160,7 @@ ADMIN_HTML = """<!doctype html>
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>leon.music — Admin</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="alternate icon" href="/favicon.ico">
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;900&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -4900,6 +4901,35 @@ else fetch('/api/admin/check').then(r=>r.json()).then(d=>{if(d.admin)showAdmin()
 </script>
 </body>
 </html>"""
+
+# ── Favicon: the leon.music dot in the server's accent colour ──
+def _icon_png(size: int, bg: bool) -> bytes:
+    S = size * 4                                                  # draw big, scale down = smooth edges
+    acc = state.get("accent") or "#e5282a"
+    im = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    if bg:
+        d.rounded_rectangle((0, 0, S - 1, S - 1), radius=S // 5, fill="#111111")
+    r = S * (0.26 if bg else 0.34)
+    d.ellipse((S / 2 - r, S / 2 - r, S / 2 + r, S / 2 + r), fill=acc)
+    im = im.resize((size, size), Image.LANCZOS)
+    b = io.BytesIO(); im.save(b, "PNG"); return b.getvalue()
+
+@api.get("/favicon.svg")
+def favicon_svg():
+    acc = state.get("accent") or "#e5282a"
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="11" fill="{acc}"/></svg>')
+    return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "no-cache"})
+
+@api.get("/favicon.ico")
+def favicon_ico():
+    im = Image.open(io.BytesIO(_icon_png(64, False)))
+    b = io.BytesIO(); im.save(b, "ICO", sizes=[(16, 16), (32, 32), (48, 48)])
+    return Response(b.getvalue(), media_type="image/x-icon", headers={"Cache-Control": "no-cache"})
+
+@api.get("/apple-touch-icon.png")
+def apple_touch_icon():
+    return Response(_icon_png(180, True), media_type="image/png", headers={"Cache-Control": "no-cache"})
 
 @api.get("/admin", response_class=HTMLResponse)
 def serve_admin():
@@ -5648,7 +5678,7 @@ import xml.etree.ElementTree as _ET
 import random as _random
 import subprocess as _subprocess
 
-APP_VERSION = "2.4.0"
+APP_VERSION = "2.4.1"
 SUBSONIC_VERSION = "1.16.1"
 _SUB_ARTICLES = "The El La Los Las Le Les Die Der Das"
 
