@@ -17,6 +17,14 @@ A self-hosted music player that lives in your system tray. Point it at a folder 
 - **Light and dark themes**, responsive layout, mobile friendly.
 - Just two files: `leon_music.py` (server and tray app) and `frontend.html` (the player UI).
 
+## What's new in 2.5
+
+- **🎧 DJ mixes**: add festival sets, radio shows and mixtapes from open **mix hubs** (Admin → DJ Mixes). leon.music downloads a mix with its CUE sheet, splits it into songs tagged *(Mixed)* and still plays it gaplessly. Every curator gets a page with a banner, logo and collections. Find them under **Search → DJ Mixes**. The official hub is [leon.music Mixes](https://weareleon.github.io/leonmusic-mixes/); the hub format is open source, so anyone can [run their own](https://github.com/weareleon/leonmusic-mixes) and publish mixes with a one-window publisher.
+- **📻 Station Lists**: *The 1 List*, *The Hits List* and so on: each live station's 50 most-played songs of the week, updated every Tuesday, with neon covers.
+- **📱 A real phone app layout**: a bottom tab bar, a Library tab, a floating mini player and a full-screen Now Playing screen you can swipe away.
+- **No more duplicates**: the same song copied into several folders shows once everywhere except those folders' playlists, and its plays and likes count together.
+- **Favicon** and a few small fixes.
+
 ## What's new in 2.4
 
 - **📱 Subsonic apps**: leon.music now speaks the Subsonic API (1.16.1 + OpenSubsonic). Create an app password in Settings and use Symfonium, Tempo, DSub, Substreamer, play:Sub, Feishin and more, with offline downloads, CarPlay and Android Auto. Likes, playlists and plays are shared with the web app, and apps can ask for a lower bitrate (converted with ffmpeg).

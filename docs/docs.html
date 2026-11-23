@@ -28,9 +28,11 @@
   <b>Using leon.music</b>
   <a href="#home">Home &amp; Made for You</a><a href="#search">Search, genres &amp; decades</a><a href="#new">New &amp; Charts</a><a href="#rewind">Rewind</a><a href="#christmas">Christmas</a><a href="#likes">Likes &amp; playlists</a><a href="#covers">Playlist covers</a><a href="#lyrics">Lyrics</a><a href="#albums">Album pages</a><a href="#explicit">Explicit songs</a>
   <b>Sharing</b>
-  <a href="#accounts">Accounts &amp; logins</a><a href="#profiles">Profiles &amp; friends</a><a href="#remote">Listening from anywhere</a>
+  <a href="#accounts">Accounts &amp; logins</a><a href="#profiles">Profiles &amp; friends</a><a href="#phone">On your phone</a><a href="#remote">Listening from anywhere</a>
   <b>Live radio</b>
-  <a href="#radio">What it is</a><a href="#radio-how">How it works</a><a href="#icecast">Install Icecast</a><a href="#radio-setup">Setting up stations</a><a href="#radio-listen">Listening</a><a href="#radio-manage">Managing &amp; fixes</a><a href="#streams">Internet radio streams</a>
+  <a href="#radio">What it is</a><a href="#radio-how">How it works</a><a href="#icecast">Install Icecast</a><a href="#radio-setup">Setting up stations</a><a href="#radio-listen">Listening</a><a href="#radio-manage">Managing &amp; fixes</a><a href="#lists">Station Lists</a><a href="#streams">Internet radio streams</a>
+  <b>DJ mixes</b>
+  <a href="#mixes">What they are</a><a href="#mixes-listen">Listening</a><a href="#mixes-add">Adding mixes</a><a href="#mixes-publish">Publishing your mixes</a><a href="#mixes-hub">Running a hub</a>
   <b>Admin</b>
   <a href="#admin">Admin panel</a><a href="#admins">Admin accounts</a><a href="#email">Email</a><a href="#apps">Apps &amp; scrobbling</a><a href="#data">Configuration &amp; data</a><a href="#build">Building an app</a>
   <b>Reference</b>
@@ -68,7 +70,8 @@ python leon_music.py</pre></div>
 └── loose-song.mp3     <span class="c">← in the library, but in no playlist</span></pre></div>
 <ul><li>Only the <b>first-level folder</b> becomes a playlist. Albums, artists, genres and years come from the <b>file tags</b>.</li>
 <li>Supported formats: MP3, FLAC, M4A/AAC, OGG, Opus, WAV and WMA, with embedded cover art.</li>
-<li>Good <b>genre</b> and <b>year</b> tags make Search categories, Decades, Made for You and Charts much better. Spelling variants like "Hip-Hop/Rap" and "hip hop" count as one genre.</li></ul>
+<li>Good <b>genre</b> and <b>year</b> tags make Search categories, Decades, Made for You and Charts much better. Spelling variants like "Hip-Hop/Rap" and "hip hop" count as one genre.</li>
+<li>The same song in several folders (same title, artist, album and length) is shown <b>once</b> everywhere except those folders' playlists, and its plays and likes count together. The best-quality copy is the one that plays.</li></ul>
 
 <h2 id="home">Home &amp; Made for You</h2>
 <figure><div class="window"><img class="zoomable" src="assets/home.jpg" alt="Home page" loading="lazy"></div><figcaption>Home for a signed-in user: Top Picks and Made for You.</figcaption></figure>
@@ -154,6 +157,14 @@ python leon_music.py</pre></div>
 <p><b>Friends</b> (in the sidebar): search everyone on the server, send requests, accept or decline them, and see what your friends are playing right now. Both people have to agree; removing a friend removes it for both.</p>
 <figure><div class="window"><img class="zoomable" src="assets/friends-mix.jpg" alt="Friends Mix" loading="lazy"></div><figcaption>The <b>Friends Mix</b> in Made for You: what your friends played in the last three weeks, with who played what.</figcaption></figure>
 <p>New profiles share listening with <b>friends only</b>. Friends who choose <i>only me</i> are left out of your Friends Mix.</p>
+
+<h2 id="phone">On your phone</h2>
+<div class="duo"><div class="window" style="max-width:300px;margin:0 auto"><img class="zoomable" src="assets/m-library.jpg" alt="Library tab on a phone" loading="lazy"></div><div class="window" style="max-width:300px;margin:0 auto"><img class="zoomable" src="assets/m-nowplaying.jpg" alt="Now Playing on a phone" loading="lazy"></div></div>
+<p>On a phone, leon.music works like a music app:</p>
+<ul><li>A <b>tab bar</b> with Home, New, Search, Radio and Library. Tap the current tab again to jump to the top.</li>
+<li><b>Library</b> has Albums, Artists, Songs, Charts and Friends, then Liked Songs, your playlists, your folder playlists and Settings.</li>
+<li>A <b>mini player</b> floats above the tab bar. Tap it for the full-screen <b>Now Playing</b> screen with big cover art, a seek bar you can drag, and Lyrics, + Playlist and ··· buttons. Swipe down, or press back, to close it.</li>
+<li>Tip: in your phone's browser menu, choose <b>Add to Home Screen</b> to open leon.music like an app.</li></ul>
 
 <h2 id="remote">Listening from anywhere</h2>
 <p>leon.music listens on <code>127.0.0.1:7733</code>. To use it from your phone or away from home, put it behind a reverse proxy with HTTPS, such as Caddy, nginx, Tailscale Serve or Cloudflare Tunnel.</p>
@@ -288,8 +299,75 @@ python leon_music.py</pre></div>
 <tr><td>Couldn't encode any songs</td><td>ffmpeg failed on several files in a row. Check that the files play normally and that ffmpeg works (<code>ffmpeg -version</code>).</td></tr>
 <tr><td>Only some songs play</td><td>ffmpeg wasn't found, so only MP3s are broadcast. Install ffmpeg and restart.</td></tr></table>
 
+<h2 id="lists">Station Lists</h2>
+<figure><div class="window"><img class="zoomable" src="assets/station-list.jpg" alt="The Hits List" loading="lazy"></div></figure>
+<p>Every live station gets a weekly playlist of what it's been playing: <b>The 1 List</b>, <b>The Hits List</b> and so on. Each List has the 50 songs the station played most last week, updated every Tuesday. Songs that are new to the List get a <b>NEW</b> tag.</p>
+<ul><li>Find them on the <b>Radio</b> page under <b>Station Lists</b>, or with the <b>☰ The … List</b> button on a station's schedule page.</li>
+<li>Each List gets a cover: the #1 song's art under a neon sign in the station's colours.</li>
+<li>Press <b>+</b> to save this week's List as your own playlist, or <b>◉</b> to listen to the station live.</li>
+<li>A new station starts its List from what it has played so far, filled up with songs from its playlists, so it's never empty. A clean station's List only has clean songs.</li></ul>
+
 <h2 id="streams">Internet radio streams</h2>
 <p>You can also add any Icecast or Shoutcast stream URL in the admin panel's <b>Radio stations</b> card. These appear under <i>More Stations</i>, with now-playing info read from the stream.</p>
+
+<h2 id="mixes">DJ mixes: what they are</h2>
+<figure><div class="window"><img class="zoomable" src="assets/dj-mix.jpg" alt="A DJ mix page" loading="lazy"></div><figcaption>A DJ mix: one continuous set, split into its songs.</figcaption></figure>
+<p>A <b>DJ mix</b> is a whole set, like a festival performance, a radio show or a mixtape, recorded as one long audio file. leon.music splits it into the songs that were played, using the mix's <b>CUE sheet</b>, so you can see every song, skip between them, like them and add them to playlists. It still plays as one seamless mix, with no gaps between the songs.</p>
+<p>Mixes come from <b>mix hubs</b>: small websites that share mixes with leon.music servers. Anyone can run a hub (it's open source), and every server can add as many hubs as it likes. The official one is <a href="https://weareleon.github.io/leonmusic-mixes/">leon.music Mixes</a>.</p>
+<ul><li><b>Curators</b> are whoever publishes a mix: a festival, a radio show, a label or a DJ. Each one gets a page with a banner, a logo, a bio and their mixes grouped into <b>collections</b> such as "Sunset Festival 2026" or "Episodes".</li>
+<li>The <b>DJ</b> is the mix's artist. Each song keeps its own artists from the CUE sheet, and its title gets <b>(Mixed)</b> at the end, so you can tell it apart from the studio version.</li>
+<li>Mix songs show up on the mix and curator pages, in search, in Liked Songs and in your own playlists. They stay out of artist pages and Essentials, charts, Made for You, genre and decade playlists, New, Station Lists and radio stations, so your library's regular lists aren't flooded with mix versions.</li></ul>
+
+<h2 id="mixes-listen">Listening to mixes</h2>
+<div class="duo"><div class="window"><img class="zoomable" src="assets/dj-mixes.jpg" alt="DJ Mixes page" loading="lazy"></div><div class="window"><img class="zoomable" src="assets/curator.jpg" alt="A curator page" loading="lazy"></div></div>
+<ol><li>Open <b>Search</b> and tap the <b>DJ Mixes</b> tile. It appears once your server has at least one mix.</li>
+<li>Browse <b>Latest Mixes</b> and <b>Curators</b>, or a row per curator. Tap a curator to see their page and collections.</li>
+<li>On a mix, press <b>▶ Play</b> to hear it from the start, or tap any song to start there. The mix plays straight through: song changes happen at exactly the right moment, with nothing reloading.</li>
+<li><b>Shuffle</b> plays the songs in a random order, and <b>+</b> saves the whole mix as one of your playlists.</li></ol>
+<p>In <a href="#apps">Subsonic apps</a>, each mix shows up as an album by the DJ, with every song as its own track.</p>
+
+<h2 id="mixes-add">Adding mixes to your server</h2>
+<figure><div class="window"><img class="zoomable" src="assets/admin-mixes.jpg" alt="DJ Mixes card in the admin panel" loading="lazy"></div><figcaption>Admin panel → DJ Mixes: add a hub, then press Add on the mixes you want.</figcaption></figure>
+<ol><li>Open the <b>admin panel</b> and find the <b>DJ Mixes</b> card.</li>
+<li>Press <b>+ Add the official leon.music hub</b>, or paste another hub's address (e.g. <code>https://someone.github.io/their-mixes/</code>) and press <b>Add hub</b>.</li>
+<li>Press <b>Browse</b> next to the hub to list its mixes, with the DJ, curator, number of songs and size.</li>
+<li>Press <b>Add</b> on a mix. A progress bar shows the download. leon.music then checks the file, cuts it into songs and creates the curator's page. A 1-hour mix takes about a minute on a normal connection.</li></ol>
+<ul><li><b>Update</b> downloads a mix again, for example after the hub fixed its CUE sheet. Plays and likes are kept.</li>
+<li><b>Remove</b> deletes the mix, its songs and its files. The curator goes too, once they have no mixes left.</li>
+<li>Mixes are stored in <code>~/.leon-music/mixes/</code>, not in your music folder: the full mix plus its cut songs, about twice the mix's size.</li>
+<li>Cutting needs <b>ffmpeg</b>. Without it, mixes still play in full in the web player.</li></ul>
+<div class="note tip"><span>🔒</span><span>Only admins can add hubs and mixes. Each download is checked against the checksum in the hub, so a damaged download is refused instead of half-imported. A hub is trusted as a whole, so only add hubs you trust.</span></div>
+
+<h2 id="mixes-publish">Publishing your own mixes</h2>
+<p>You need a <b>hub you can push to</b>: either your own (see the next section) or a hub whose owner made you a collaborator. Anyone else can send a mix through a hub's <b>Submit your mix</b> form, and the owner reviews it by hand.</p>
+<p><b>What you need:</b> the mix as one audio file (320 kbps MP3 is ideal, max 2 GB), a <b>CUE sheet</b> listing each song's start time, and optionally a square cover. Most DJ software, including rekordbox, Serato, Traktor and Mixxx, can export a CUE sheet with a recording. A CUE sheet looks like this:</p>
+<div class="code"><pre>PERFORMER "Leon"
+TITLE "Leon's Mini-Mix Vol. 1"
+FILE "mix.mp3" MP3
+  TRACK 01 AUDIO
+    TITLE "WannaCry (Extended Mix)"
+    PERFORMER "Ninajirachi, Porter Robinson"
+    INDEX 01 00:00:00
+  TRACK 02 AUDIO
+    TITLE "More! More! More! (Extended Mix)"
+    PERFORMER "Becky Hill"
+    INDEX 01 04:22:30        <span class="c">← minutes:seconds:frames (75 frames per second)</span></pre></div>
+<ol><li><b>One-time setup:</b> install <a href="https://cli.github.com">GitHub CLI</a>, run <code>gh auth login</code> and sign in with an account that can push to the hub. Download the hub's files (<b>Code → Download ZIP</b> on its GitHub page).</li>
+<li>Double-click <b>Publish a mix.cmd</b>.</li>
+<li>Pick the <b>mix audio</b> and the <b>CUE sheet</b>. The title and DJ are filled in from the CUE sheet.</li>
+<li>Pick the <b>curator</b>, or choose <b>+ New curator…</b> and give them a name. A logo (400 × 400 px), a banner (2400 × 600 px, with important parts in the middle), a bio and a website are optional.</li>
+<li>Fill in the <b>collection</b> (use the exact same name for mixes that belong together, e.g. "Mini-Mixes"), genre and year, and tick explicit if needed. No cover? One is made with the DJ's name.</li>
+<li>Press <b>Publish</b>. The publisher uploads the audio to the hub's GitHub release, updates <code>hub.json</code> and pushes. The mix is on the hub a minute or two later. Servers then see it under <b>Browse</b>.</li></ol>
+<p>Your GitHub sign-in decides where you can publish. The publisher never stores a password. If you don't have push access, GitHub refuses and nothing half-finished is published.</p>
+
+<h2 id="mixes-hub">Running your own hub</h2>
+<p>The hub format and tools are <b>open source</b> (MIT). Festivals, radio shows, labels or DJs can run their own hub and every leon.music server can add it.</p>
+<ol><li>Open <a href="https://github.com/weareleon/leonmusic-mixes">weareleon/leonmusic-mixes</a> and press <b>Use this template</b>.</li>
+<li>In your copy, edit <code>hub.config.json</code> (name, description and your own submission link) and turn on <b>GitHub Pages</b> (Settings → Pages → Deploy from branch → <code>main</code>).</li>
+<li>Publish mixes with <b>Publish a mix.cmd</b>, typing your repo in the <b>Hub repo</b> box.</li>
+<li>Share your hub's address, e.g. <code>https://you.github.io/your-hub/</code>. Its page shows your mixes and a button to copy the address.</li></ol>
+<p>Prefer to host it yourself? Any web server works, for example behind a Cloudflare Tunnel. Run <code>build_hub.py</code> without <code>--audio-base</code> and keep the audio next to <code>hub.json</code>. The format is documented in <a href="https://github.com/weareleon/leonmusic-mixes/blob/main/SPEC.md">SPEC.md</a>.</p>
+<div class="note warn"><span>⚖️</span><span>The licence covers the code and the format, not the music. Only publish mixes you made or have permission to share.</span></div>
 
 <h2 id="admin">Admin panel</h2>
 <p>Open <code>/admin</code> (for example <code>http://localhost:7733/admin</code>) and sign in with the admin password.</p>
@@ -346,6 +424,8 @@ pyinstaller --onefile --windowed --name "leon.music" leon_music.py</pre></div>
 <tr><td><code>POST /api/covers/preview</code>, <code>GET /api/covers/fonts</code>, <code>/api/me/playlists/{id}/cover</code></td><td>Cover designer</td></tr>
 <tr><td><code>/api/me/email</code>, <code>POST /api/auth/forgot</code>, <code>/api/auth/reset</code></td><td>Email address, preferences and password reset</td></tr>
 <tr><td><code>/rest/*</code></td><td>Subsonic API (1.16.1, OpenSubsonic) for apps</td></tr>
+<tr><td><code>GET /api/radio/lists</code>, <code>/radio/lists/{id}</code></td><td>Station Lists</td></tr>
+<tr><td><code>GET /api/mixes</code>, <code>/mixes/{id}</code>, <code>/mixes/curators/{id}</code></td><td>DJ mixes and curators</td></tr>
 <tr><td><code>GET /api/explicit</code></td><td>IDs of explicit songs</td></tr>
 <tr><td><code>GET|POST /api/broadcast</code></td><td>Live radio setup (admin)</td></tr>
 <tr><td><code>/api/admin/*</code></td><td>Admin actions (users, settings, stations)</td></tr></table>

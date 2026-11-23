@@ -435,12 +435,62 @@ def scan_library():
                     db.commit()
         db.commit()
         state.pop("scan_error", None)
+        mark_duplicates()
     except Exception as e:
         state["scan_error"] = (f"{type(e).__name__}: {e}", _now())     # emailed to admins (if email is set up)
         raise
     finally:
         db.close()
         state["scanning"]  = False
+
+# ── Duplicate copies ──────────────────────────────────────────────────────────
+# The same song is often copied into several playlist folders. Copies with the same title, artist and album
+# (and about the same length) are linked to one original (dup_of): albums, artists, search, mixes, charts and
+# Essentials show it once, while folder playlists still show their own copy.
+def _dup_key(r):
+    norm = lambda v: re.sub(r"[\W_]+", " ", (v or "").lower()).strip()
+    return (norm(r["title"]), norm(r["album_artist"] or r["artist"]), norm(r["album"]))
+
+def mark_duplicates() -> int:
+    db = get_db()
+    rows = db.execute("SELECT id,title,artist,album_artist,album,duration,bitrate,dup_of FROM tracks").fetchall()
+    groups: dict = {}
+    for r in rows:
+        k = _dup_key(r)
+        if k[0]:
+            groups.setdefault(k, []).append(r)
+    want = {}
+    for g in groups.values():
+        g.sort(key=lambda r: (-(r["bitrate"] or 0), r["id"]))       # best quality copy is the original
+        while g:
+            orig, rest = g[0], g[1:]
+            same = [r for r in rest if abs((r["duration"] or 0) - (orig["duration"] or 0)) <= 3]
+            want[orig["id"]] = None
+            for r in same:
+                want[r["id"]] = orig["id"]
+            g = [r for r in rest if r not in same]
+    cur = {r["id"]: r["dup_of"] for r in rows}
+    upd = [(v, k) for k, v in want.items() if cur.get(k) != v]
+    if upd:
+        db.executemany("UPDATE tracks SET dup_of=? WHERE id=?", upd)
+        # plays and likes recorded on a copy move to the original, so charts and Liked Songs don't split
+        db.execute("UPDATE plays SET track_id=(SELECT dup_of FROM tracks WHERE id=plays.track_id) "
+                   "WHERE track_id IN (SELECT id FROM tracks WHERE dup_of IS NOT NULL)")
+        db.execute("INSERT OR IGNORE INTO likes(user_id,track_id,created) SELECT l.user_id,t.dup_of,l.created FROM likes l "
+                   "JOIN tracks t ON t.id=l.track_id WHERE t.dup_of IS NOT NULL")
+        db.execute("DELETE FROM likes WHERE track_id IN (SELECT id FROM tracks WHERE dup_of IS NOT NULL)")
+        db.commit()
+    n = sum(1 for v in want.values() if v)
+    db.close()
+    return n
+
+def init_dupes_db():
+    init_db()
+    db = get_db()
+    if "dup_of" not in {r[1] for r in db.execute("PRAGMA table_info(tracks)")}:
+        db.execute("ALTER TABLE tracks ADD COLUMN dup_of INTEGER")
+    db.execute("CREATE VIEW IF NOT EXISTS songs AS SELECT * FROM tracks WHERE dup_of IS NULL")
+    db.commit(); db.close()
 
 # ── FastAPI ───────────────────────────────────────────────────────────────────
 api = FastAPI(title="leon.music", docs_url=None, redoc_url=None)
@@ -503,8 +553,8 @@ def api_status(req: Request):
                 "logo_url": "", "accent": state["accent"], "hero_image": "", "hero_tint": "",
                 "cover_logo_cfg": state["cover_logo_cfg"], "cover_text_pos": state["cover_text_pos"]}
     db = get_db()
-    total  = db.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
-    albums = db.execute("SELECT COUNT(DISTINCT album) FROM tracks").fetchone()[0]
+    total  = db.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
+    albums = db.execute("SELECT COUNT(DISTINCT album) FROM songs").fetchone()[0]
     db.close()
     return {
         "locked": False,
@@ -562,7 +612,7 @@ def api_tracks(album:Optional[str]=None, artist:Optional[str]=None,
                playlist:Optional[str]=None, search:Optional[str]=None,
                limit:int=500, offset:int=0):
     db = get_db()
-    q = "SELECT id,title,artist,album,track_num,disc_num,year,duration,cover_id,playlist FROM tracks WHERE 1=1"
+    q = f"SELECT id,title,artist,album,track_num,disc_num,year,duration,cover_id,playlist,mix_id,mix_start,mix_end FROM {'tracks' if playlist else 'all_songs' if album else 'songs'} WHERE 1=1"
     p: list = []
     if album:    q += " AND album=?";    p.append(album)
     if artist:   q += " AND COALESCE(album_artist,artist)=?"; p.append(artist)   # same key as /api/artists
@@ -583,7 +633,7 @@ def api_albums():
     rows = db.execute("""
         SELECT album, COALESCE(album_artist,artist) as artist, year,
                COUNT(*) as track_count, SUM(duration) as total_duration, MIN(cover_id) as cover_id
-        FROM tracks GROUP BY album ORDER BY album
+        FROM songs GROUP BY album ORDER BY album
     """).fetchall(); db.close()
     return [dict(r) for r in rows]
 
@@ -594,7 +644,7 @@ def api_artists():
         SELECT COALESCE(album_artist,artist) as name,
                COUNT(DISTINCT album) as album_count, COUNT(*) as track_count,
                MIN(cover_id) as cover_id
-        FROM tracks GROUP BY name ORDER BY name
+        FROM songs GROUP BY name ORDER BY name
     """).fetchall(); db.close()
     forced = {n.lower() for n in state["forced_essentials"]}
     out = []
@@ -1255,7 +1305,7 @@ def _current_program(st: dict, now=None):
 
 def _pool(playlists: list, allow_explicit: bool = True) -> list:
     db = get_db()
-    q = "SELECT id,path,title,artist,album,duration,cover_id FROM tracks WHERE 1=1"
+    q = "SELECT id,path,title,artist,album,duration,cover_id,COALESCE(dup_of,id) AS canon FROM tracks WHERE mix_id IS NULL"
     p: list = []
     if playlists and "*" not in playlists:
         q += f" AND playlist IN ({','.join('?' * len(playlists))})"
@@ -1264,6 +1314,8 @@ def _pool(playlists: list, allow_explicit: bool = True) -> list:
         q += " AND COALESCE(explicit,0)=0"
     rows = [dict(r) for r in db.execute(q, p).fetchall()]
     db.close()
+    seen: set = set()                              # one copy of each song, even across folders
+    rows = [r for r in rows if not (r["canon"] in seen or seen.add(r["canon"]))]
     if not FFMPEG:                                 # without ffmpeg we can only pass MP3 through
         rows = [r for r in rows if r["path"].lower().endswith(".mp3")]
     return rows
@@ -1452,6 +1504,7 @@ class _Caster(threading.Thread):
                                   now={"title": t["title"], "artist": t["artist"], "album": t["album"],
                                        "cover_id": t["cover_id"], "track_id": t["id"],
                                        "duration": t["duration"], "started": _now()})
+                        log_radio_play(self.sid, t["id"])
                         if not went_live:
                             went_live = True
                             _bc_status[self.sid]["since"] = _now()
@@ -1496,6 +1549,7 @@ async def _lifespan(_app):
     """Server start-up: bring live radio stations back on air (replaces the deprecated @on_event)."""
     threading.Thread(target=bc_sync, daemon=True).start()
     threading.Thread(target=system_fonts, daemon=True).start()     # warm the cover designer's font list
+    threading.Thread(target=mark_duplicates, daemon=True).start()
     threading.Thread(target=_email_loop, daemon=True, name="email").start()
     threading.Thread(target=_scrobble_loop, daemon=True, name="scrobble").start()
     yield
@@ -1917,7 +1971,7 @@ def api_years():
     db = get_db()
     rows = db.execute("""
         SELECT year, COUNT(*) as track_count
-        FROM tracks
+        FROM songs
         WHERE year IS NOT NULL AND year > 0
         GROUP BY year
         ORDER BY year DESC
@@ -1996,8 +2050,10 @@ def api_play_log(track_id: int, req: Request):
     now = _now()
     db = get_db()
     try:
-        if not db.execute("SELECT 1 FROM tracks WHERE id=?", (track_id,)).fetchone():
+        hit = db.execute("SELECT COALESCE(dup_of,id) FROM tracks WHERE id=?", (track_id,)).fetchone()
+        if not hit:
             raise HTTPException(404)
+        track_id = hit[0]                                      # a duplicate copy counts for the original
         dup = db.execute(
             "SELECT 1 FROM plays WHERE track_id=? AND listener=? AND played_at>?",
             (track_id, listener, now - _PLAY_DEDUPE_SECS)).fetchone()
@@ -2049,7 +2105,7 @@ def api_charts(period: str = "week"):
         ph = ",".join("?" * len(ids))
         for r in db.execute(f"""SELECT id,title,artist,album,duration,cover_id,genre,
                                        COALESCE(album_artist,artist) AS main_artist
-                                FROM tracks WHERE id IN ({ph})""", list(ids)).fetchall():
+                                FROM tracks WHERE id IN ({ph}) AND mix_id IS NULL""", list(ids)).fetchall():
             info[r["id"]] = dict(r)
     total_plays = sum(n for n, _ in cur.values())
     listeners = db.execute(
@@ -2137,14 +2193,14 @@ def api_new():
     # Newest first: when the server first saw the file, then the file's own modified time
     # (the first scan gives every track the same added_at, so mtime breaks the tie).
     songs = [dict(r) for r in db.execute(f"""
-        SELECT {_TRACK_COLS}, added_at FROM tracks
+        SELECT {_TRACK_COLS}, added_at FROM songs
         ORDER BY added_at DESC, mtime DESC LIMIT 100""").fetchall()]
 
     albums = [dict(r) for r in db.execute("""
         SELECT album, COALESCE(album_artist,artist) AS artist, MAX(year) AS year,
                COUNT(*) AS track_count, SUM(duration) AS total_duration,
                MIN(cover_id) AS cover_id, MAX(added_at) AS added_at
-        FROM tracks WHERE album IS NOT NULL AND album<>''
+        FROM songs WHERE album IS NOT NULL AND album<>''
         GROUP BY album ORDER BY MAX(added_at) DESC, MAX(mtime) DESC LIMIT 18""").fetchall()]
 
     cutoff = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=_NEW_WINDOW_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
@@ -2170,14 +2226,14 @@ def api_new():
     fresh = [dict(r) for r in db.execute("""
         SELECT album, COALESCE(album_artist,artist) AS artist, MAX(year) AS year,
                COUNT(*) AS track_count, SUM(duration) AS total_duration, MIN(cover_id) AS cover_id
-        FROM tracks WHERE year>=? AND album IS NOT NULL AND album<>''
+        FROM songs WHERE year>=? AND album IS NOT NULL AND album<>''
         GROUP BY album ORDER BY MAX(year) DESC, MAX(added_at) DESC LIMIT 18""",
         (this_year - 1,)).fetchall()]
 
     new_artists = [dict(r) for r in db.execute("""
         SELECT COALESCE(album_artist,artist) AS name, COUNT(DISTINCT album) AS album_count,
                COUNT(*) AS track_count, MIN(cover_id) AS cover_id, MIN(added_at) AS first_added
-        FROM tracks GROUP BY name HAVING name IS NOT NULL AND name<>''
+        FROM songs GROUP BY name HAVING name IS NOT NULL AND name<>''
         ORDER BY MIN(added_at) DESC, MAX(mtime) DESC LIMIT 12""").fetchall()]
     db.close()
 
@@ -2560,7 +2616,7 @@ def api_users_delete(uid: int, req: Request):
 def _genre_index() -> dict:
     """genre key -> {'labels', 'ids', 'covers'}; same normalisation as the charts."""
     db = get_db()
-    rows = db.execute("SELECT id,genre,cover_id,COALESCE(album_artist,artist) AS a FROM tracks WHERE genre IS NOT NULL AND genre<>''").fetchall()
+    rows = db.execute("SELECT id,genre,cover_id,COALESCE(album_artist,artist) AS a FROM songs WHERE genre IS NOT NULL AND genre<>''").fetchall()
     db.close()
     idx: dict = {}
     for r in rows:
@@ -2684,7 +2740,7 @@ def _tracks_by_ids(db, ids: list) -> list:
         return []
     rows = {r["id"]: dict(r) for r in db.execute(
         f"SELECT id,title,artist,album,duration,cover_id,genre,COALESCE(album_artist,artist) AS main_artist "
-        f"FROM tracks WHERE id IN ({','.join('?' * len(ids))})", ids)}
+        f"FROM tracks WHERE id IN ({','.join('?' * len(ids))}) AND mix_id IS NULL", ids)}    # DJ-mix songs stay out of generated playlists
     return [rows[i] for i in ids if i in rows]
 
 def _artist_line(tracks: list, n: int = 5) -> list:
@@ -2707,7 +2763,7 @@ def api_me_home(req: Request):
     keys = set(u.get("genres") or [])
     db = get_db()
     allrows = [dict(r) for r in db.execute(
-        "SELECT id,genre,added_at,mtime,COALESCE(album_artist,artist) AS a FROM tracks").fetchall()]
+        "SELECT id,genre,added_at,mtime,COALESCE(album_artist,artist) AS a FROM songs").fetchall()]
     gkey = {r["id"]: (_genre_parts(r["genre"])[0] or "") for r in allrows}
     pool = [r for r in allrows if not keys or gkey[r["id"]] in keys]
     gplays = {r[0]: r[1] for r in db.execute("SELECT track_id, COUNT(*) FROM plays GROUP BY track_id")}
@@ -2766,7 +2822,7 @@ def api_me_home(req: Request):
             alb = db.execute("""SELECT album, COALESCE(album_artist,artist) AS artist, MAX(year) AS year,
                        COUNT(*) AS track_count, SUM(duration) AS total_duration, MIN(cover_id) AS cover_id,
                        SUM(CASE WHEN id IN (%s) THEN 1 ELSE 0 END) AS heard
-                FROM tracks WHERE COALESCE(album_artist,artist)=? AND album IS NOT NULL AND album<>''
+                FROM songs WHERE COALESCE(album_artist,artist)=? AND album IS NOT NULL AND album<>''
                 GROUP BY album ORDER BY heard ASC, MAX(added_at) DESC LIMIT 1""" % (",".join("?" * len(played)) or "NULL"),
                 list(played) + [fav]).fetchone()
             if alb:
@@ -2799,18 +2855,18 @@ def api_search(q: str = ""):
     like = f"%{q}%"
     db = get_db()
     tracks = [dict(r) for r in db.execute(
-        """SELECT id,title,artist,album,duration,cover_id FROM tracks
+        """SELECT id,title,artist,album,duration,cover_id FROM all_songs
            WHERE title LIKE ? OR artist LIKE ? OR album LIKE ?
            ORDER BY (title LIKE ?) DESC, title LIMIT 30""", (like, like, like, f"{q}%")).fetchall()]
     artists = [dict(r) for r in db.execute(
         """SELECT COALESCE(album_artist,artist) AS name, COUNT(DISTINCT album) AS album_count,
                   COUNT(*) AS track_count, MIN(cover_id) AS cover_id
-           FROM tracks WHERE COALESCE(album_artist,artist) LIKE ? GROUP BY name
+           FROM all_songs WHERE COALESCE(album_artist,artist) LIKE ? GROUP BY name
            ORDER BY (name LIKE ?) DESC, track_count DESC LIMIT 12""", (like, f"{q}%")).fetchall()]
     albums = [dict(r) for r in db.execute(
         """SELECT album, COALESCE(album_artist,artist) AS artist, MAX(year) AS year, COUNT(*) AS track_count,
                   SUM(duration) AS total_duration, MIN(cover_id) AS cover_id
-           FROM tracks WHERE album IS NOT NULL AND album<>'' AND (album LIKE ? OR COALESCE(album_artist,artist) LIKE ?)
+           FROM all_songs WHERE album IS NOT NULL AND album<>'' AND (album LIKE ? OR COALESCE(album_artist,artist) LIKE ?)
            GROUP BY album ORDER BY (album LIKE ?) DESC, album LIMIT 12""", (like, like, f"{q}%")).fetchall()]
     db.close()
     return {"tracks": tracks, "artists": artists, "albums": albums}
@@ -2829,11 +2885,11 @@ def _decade_label(d: int) -> str:
 @api.get("/api/decades")
 def api_decades():
     db = get_db()
-    rows = db.execute("""SELECT (year/10)*10 AS d, COUNT(*) AS n FROM tracks
+    rows = db.execute("""SELECT (year/10)*10 AS d, COUNT(*) AS n FROM songs
                          WHERE year BETWEEN 1900 AND 2100 GROUP BY d ORDER BY d DESC""").fetchall()
     out = []
     for r in rows:
-        a = db.execute("""SELECT COALESCE(album_artist,artist) AS a, COUNT(*) c FROM tracks WHERE (year/10)*10=?
+        a = db.execute("""SELECT COALESCE(album_artist,artist) AS a, COUNT(*) c FROM songs WHERE (year/10)*10=?
                           AND COALESCE(album_artist,artist) IS NOT NULL GROUP BY a ORDER BY c DESC LIMIT 1""", (r["d"],)).fetchone()
         out.append({"decade": r["d"], "label": _decade_label(r["d"]), "count": r["n"], "artist": a["a"] if a else ""})
     db.close()
@@ -2842,7 +2898,7 @@ def api_decades():
 @api.get("/api/decades/{decade}")
 def api_decade_page(decade: int):
     db = get_db()
-    ids = [r[0] for r in db.execute("SELECT id FROM tracks WHERE year BETWEEN ? AND ?", (decade, decade + 9))]
+    ids = [r[0] for r in db.execute("SELECT id FROM songs WHERE year BETWEEN ? AND ?", (decade, decade + 9))]
     db.close()
     if not ids:
         raise HTTPException(404, "No songs from that decade")
@@ -3059,8 +3115,10 @@ def api_likes(req: Request, ids_only: bool = False):
 def api_like(track_id: int, req: Request):
     uid = _me_id(req)
     db = get_db()
-    if not db.execute("SELECT 1 FROM tracks WHERE id=?", (track_id,)).fetchone():
+    hit = db.execute("SELECT COALESCE(dup_of,id) FROM tracks WHERE id=?", (track_id,)).fetchone()
+    if not hit:
         db.close(); raise HTTPException(404)
+    track_id = hit[0]
     db.execute("INSERT OR IGNORE INTO likes(user_id,track_id,created) VALUES(?,?,?)", (uid, track_id, _now()))
     db.commit(); db.close()
     return {"liked": True}
@@ -3068,7 +3126,9 @@ def api_like(track_id: int, req: Request):
 @api.delete("/api/me/likes/{track_id}")
 def api_unlike(track_id: int, req: Request):
     uid = _me_id(req)
-    db = get_db(); db.execute("DELETE FROM likes WHERE user_id=? AND track_id=?", (uid, track_id)); db.commit(); db.close()
+    db = get_db()
+    db.execute("DELETE FROM likes WHERE user_id=? AND (track_id=? OR track_id=(SELECT COALESCE(dup_of,id) FROM tracks WHERE id=?))", (uid, track_id, track_id))
+    db.commit(); db.close()
     return {"liked": False}
 
 # ── User playlists ──
@@ -3339,7 +3399,7 @@ def api_album_related(album: str):
     # …and the album artists' Essentials (the page decides which artists qualify, same rule as the Artists page)
     ess = [dict(r) for r in db.execute(
         f"""SELECT COALESCE(album_artist,artist) AS name, COUNT(DISTINCT album) AS album_count, COUNT(*) AS track_count,
-                   MIN(cover_id) AS cover_id FROM tracks
+                   MIN(cover_id) AS cover_id FROM songs
             WHERE COALESCE(album_artist,artist) IN ({','.join('?' * len(artists))}) GROUP BY name""", artists)] if artists else []
     forced = {n.lower() for n in state["forced_essentials"]}
     for e in ess:
@@ -3355,7 +3415,7 @@ def api_album_related(album: str):
     yr = sorted(years)[len(years) // 2] if years else None
     plays = {r[0]: r[1] for r in db.execute("SELECT track_id, COUNT(*) FROM plays GROUP BY track_id")}
     cand: dict = {}
-    for r in db.execute("SELECT id,album,genre,year,COALESCE(album_artist,artist) AS a FROM tracks "
+    for r in db.execute("SELECT id,album,genre,year,COALESCE(album_artist,artist) AS a FROM songs "
                         "WHERE album IS NOT NULL AND album<>'' AND album<>?", (album,)):
         if r["a"] in artists:
             continue
@@ -3772,7 +3832,7 @@ _XMAS_COLORS = {"classics": ["#c8102e", "#ffd166", "#1b7a43", "#7a0c1d"],
 def _christmas_ids(db) -> list:
     """Songs whose genre, folder playlist or album says Christmas (in a few languages)."""
     out = []
-    for r in db.execute("SELECT id,genre,playlist,album FROM tracks"):
+    for r in db.execute("SELECT id,genre,playlist,album FROM songs"):
         if any(v and _XMAS.search(str(v)) for v in (r["genre"], r["playlist"], r["album"])):
             out.append(r["id"])
     return out
@@ -4402,6 +4462,18 @@ input[type=checkbox]{width:auto}
   </div>
 
   <div class="card">
+    <div class="card-title">DJ Mixes</div>
+    <div style="font-size:12.5px;color:var(--fg2);line-height:1.5">Add DJ mixes from a <b>mix hub</b>: a website that shares mixes with CUE sheets.
+      leon.music downloads a mix, cuts it into its songs and adds a curator page for whoever made it. Mixes show up under <b>Search → DJ Mixes</b>.</div>
+    <label>Mix hub address</label>
+    <div style="display:flex;gap:8px"><input type="url" id="mhUrl" placeholder="https://example.github.io/mixes/">
+      <button class="btn btn-secondary" onclick="addHub()">Add hub</button></div>
+    <div class="msg" id="mhMsg"></div>
+    <div id="mhList"></div>
+    <div id="mhBrowse"></div>
+  </div>
+
+  <div class="card">
     <div class="card-title">Last.fm scrobbling</div>
     <div style="font-size:12.5px;color:var(--fg2);line-height:1.5">To let people send what they play to Last.fm, create a free API account at
       <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener" style="color:var(--accent)">last.fm/api/account/create</a>
@@ -4492,6 +4564,7 @@ async function showAdmin(){
   loadYearScan();
   loadEmailUI();
   loadLastfmUI();
+  loadHubs();
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('adminMain').style.display = 'block';
   document.getElementById('logoutBtn').style.display = '';
@@ -4633,6 +4706,65 @@ async function saveTheme(){
   if(r.ok){ m.className = 'msg ok'; m.textContent = 'Saved ✓ — reload the player to see it'; }
   else { const e = await r.json().catch(() => ({})); m.className = 'msg err'; m.textContent = e.detail || 'Failed to save.'; }
   setTimeout(() => m.textContent = '', 4000);
+}
+
+// ── DJ Mixes ──
+let _mhPoll=null,_mhOpen=null;
+const mhEsc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function loadHubs(){
+  let d;try{d=await (await fetch('/api/admin/mixhubs',{headers:{'X-Admin-Token':_token}})).json();}catch(e){return;}
+  const L=document.getElementById('mhList');L.innerHTML='';
+  if(!d.ffmpeg)L.insertAdjacentHTML('beforeend','<div class="msg err">ffmpeg is not installed, so mixes cannot be cut into songs. They still play in full in the web player.</div>');
+  const OFFICIAL='https://weareleon.github.io/leonmusic-mixes/hub.json';
+  if(!d.hubs.some(h=>h.url===OFFICIAL)){const o=document.createElement('button');o.className='btn btn-secondary';o.style.margin='10px 0 4px';
+    o.textContent='+ Add the official leon.music hub';o.onclick=()=>{document.getElementById('mhUrl').value=OFFICIAL;addHub();};L.appendChild(o);}
+  d.hubs.forEach(h=>{const r=document.createElement('div');r.className='st-row';r.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 0';
+    r.innerHTML=`<div style="flex:1;min-width:0"><b>${mhEsc(h.name)}</b><div style="font-size:11px;color:var(--fg3);overflow:hidden;text-overflow:ellipsis">${mhEsc(h.url)}</div></div>
+      <button class="btn btn-primary" style="padding:7px 14px">Browse</button><button class="btn btn-secondary" style="padding:7px 12px">Remove</button>`;
+    const [b,x]=r.querySelectorAll('button');b.onclick=()=>browseHub(h.url);
+    x.onclick=async()=>{if(!confirm('Remove this hub? Mixes you already added stay.'))return;
+      await fetch('/api/admin/mixhubs?url='+encodeURIComponent(h.url),{method:'DELETE',headers:{'X-Admin-Token':_token}});loadHubs();};
+    L.appendChild(r);});
+}
+async function addHub(){
+  const m=document.getElementById('mhMsg');m.className='msg';m.textContent='Checking the hub…';
+  const r=await fetch('/api/admin/mixhubs',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_token},body:JSON.stringify({url:document.getElementById('mhUrl').value.trim()})});
+  const e=await r.json().catch(()=>({}));
+  m.className=r.ok?'msg ok':'msg err';m.textContent=r.ok?'Hub added ✓':(e.detail||'Could not add the hub.');
+  if(r.ok){document.getElementById('mhUrl').value='';loadHubs();}
+}
+async function browseHub(url){
+  _mhOpen=url;const B=document.getElementById('mhBrowse');B.innerHTML='<div class="msg">Loading…</div>';
+  const r=await fetch('/api/admin/mixhub?url='+encodeURIComponent(url),{headers:{'X-Admin-Token':_token}});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){B.innerHTML=`<div class="msg err">${mhEsc(d.detail||'Could not read the hub.')}</div>`;return;}
+  const cur=Object.fromEntries(d.curators.map(c=>[c.id,c]));
+  B.innerHTML=`<label style="margin-top:22px">${mhEsc(d.name)} · ${d.mixes.length} mixes</label>${d.description?`<div style="font-size:12px;color:var(--fg2)">${mhEsc(d.description)}</div>`:''}
+    ${d.apply?`<div style="font-size:12px;margin-top:6px"><a href="${mhEsc(d.apply)}" target="_blank" rel="noopener" style="color:var(--accent)">Want your mixes on this hub? Apply here ↗</a></div>`:''}`;
+  let working=false;
+  d.mixes.forEach(m=>{
+    const row=document.createElement('div');row.className='ad-mix';row.style.cssText='display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)';
+    const j=m.job,busy=j&&j.state==='working';working=working||busy;
+    const mb=m.size?` · ${Math.round(m.size/1048576)} MB`:'';
+    row.innerHTML=`${m.cover?`<img src="${mhEsc(m.cover)}" style="width:52px;height:52px;border-radius:6px;object-fit:cover;flex-shrink:0" alt="">`:''}
+      <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700">${mhEsc(m.title)}</div>
+      <div style="font-size:11.5px;color:var(--fg2)">${mhEsc(m.dj)} · ${mhEsc((cur[m.curator]||{}).name||'')} · ${m.tracks} songs${mb}</div>
+      ${j&&j.state!=='done'?`<div class="msg ${j.state==='error'?'err':''}" style="margin-top:4px">${mhEsc(j.message||'')}</div>`:''}
+      ${busy?`<div style="height:5px;border-radius:9px;background:var(--bg4);overflow:hidden;margin-top:4px"><div style="height:100%;width:${j.progress||2}%;background:var(--accent)"></div></div>`:''}</div>`;
+    const btn=document.createElement('button');btn.className='btn '+(m.installed?'btn-secondary':'btn-primary');btn.style.padding='7px 14px';
+    btn.textContent=busy?'Adding…':m.installed?'Remove':'Add';btn.disabled=busy;
+    btn.onclick=async()=>{
+      if(m.installed){if(!confirm(`Remove "${m.title}" and its songs from your library?`))return;
+        await fetch('/api/admin/mixes/'+encodeURIComponent(m.id),{method:'DELETE',headers:{'X-Admin-Token':_token}});}
+      else await fetch('/api/admin/mixes',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_token},body:JSON.stringify({hub:url,id:m.id})});
+      browseHub(url);};
+    if(m.installed&&!busy){const u=document.createElement('button');u.className='btn btn-secondary';u.style.padding='7px 12px';u.textContent='Update';
+      u.title='Download again (e.g. if the hub fixed the CUE sheet)';
+      u.onclick=async()=>{await fetch('/api/admin/mixes',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_token},body:JSON.stringify({hub:url,id:m.id})});browseHub(url);};
+      row.appendChild(u);}
+    row.appendChild(btn);B.appendChild(row);
+  });
+  clearTimeout(_mhPoll);if(working)_mhPoll=setTimeout(()=>{if(_mhOpen===url)browseHub(url);},1200);
 }
 
 // ── Last.fm ──
@@ -5568,13 +5700,13 @@ def _weekly_digest(uid: int, w0: float, label: str):
 
 def _new_music_digest(uids: list, key: str):
     db = get_db()
-    total = db.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
+    total = db.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
     since = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=7)
     rows = db.execute("""SELECT album, COALESCE(album_artist,artist) AS artist, MIN(cover_id) AS cover_id, COUNT(*) AS n
-                         FROM tracks WHERE added_at>=? AND album IS NOT NULL AND album<>''
+                         FROM songs WHERE added_at>=? AND album IS NOT NULL AND album<>''
                          GROUP BY album, COALESCE(album_artist,artist) ORDER BY MAX(added_at) DESC""",
                       (since.strftime("%Y-%m-%d %H:%M:%S"),)).fetchall()
-    n_songs = db.execute("SELECT COUNT(*) FROM tracks WHERE added_at>=?", (since.strftime("%Y-%m-%d %H:%M:%S"),)).fetchone()[0]
+    n_songs = db.execute("SELECT COUNT(*) FROM songs WHERE added_at>=?", (since.strftime("%Y-%m-%d %H:%M:%S"),)).fetchone()[0]
     db.close()
     if not n_songs or n_songs >= total:            # nothing new, or the very first scan (everything is "new")
         return
@@ -5678,7 +5810,7 @@ import xml.etree.ElementTree as _ET
 import random as _random
 import subprocess as _subprocess
 
-APP_VERSION = "2.4.1"
+APP_VERSION = "2.5.0"
 SUBSONIC_VERSION = "1.16.1"
 _SUB_ARTICLES = "The El La Los Las Le Les Die Der Das"
 
@@ -5731,11 +5863,14 @@ def _sub_index() -> dict:
         if _sub_idx["sig"] == sig and _sub_idx["data"]:
             db.close(); return _sub_idx["data"]
         rows = db.execute("""SELECT id,title,artist,album,album_artist,track_num,disc_num,year,genre,duration,
-                                    bitrate,size,cover_id,path,playlist,added_at,COALESCE(explicit,0) AS explicit
+                                    bitrate,size,cover_id,path,playlist,added_at,COALESCE(explicit,0) AS explicit,dup_of
                              FROM tracks""").fetchall()
         db.close()
-        songs, albums, artists = {}, {}, {}
+        songs, albums, artists, copies = {}, {}, {}, {}
         for r in rows:
+            if r["dup_of"]:
+                copies[r["id"]] = r
+                continue
             main = (r["album_artist"] or r["artist"] or "Unknown Artist").strip() or "Unknown Artist"
             alname = (r["album"] or "Unknown Album").strip() or "Unknown Album"
             arid, alid = _sid("ar-", main), _sid("al-", main + "\x00" + alname)
@@ -5754,7 +5889,11 @@ def _sub_index() -> dict:
             songs[r["id"]] = d
         for al in albums.values():
             al["songs"].sort(key=lambda i: (songs[i]["disc_num"] or 1, songs[i]["track_num"] or 0, (songs[i]["title"] or "").lower()))
-        data = {"songs": songs, "albums": albums, "artists": artists}
+        for i, r in copies.items():                     # reachable by id (folder playlists, old stars) but not listed
+            if r["dup_of"] in songs:
+                d = dict(songs[r["dup_of"]]); d.update(id=i, path=r["path"], playlist=r["playlist"], size=r["size"])
+                songs[i] = d
+        data = {"songs": songs, "albums": albums, "artists": artists, "listed": [i for i in songs if i not in copies]}
         _sub_idx.update(sig=sig, data=data)
         return data
 
@@ -6045,6 +6184,8 @@ def _sub_stream(s: dict, P, download=False):
 def _sub_log_play(ctx, s, when: float):
     db = get_db()
     listener = f"sub-{ctx.uid}"
+    canon = db.execute("SELECT COALESCE(dup_of,id) FROM tracks WHERE id=?", (s["id"],)).fetchone()
+    s = {**s, "id": canon[0] if canon else s["id"]}                 # a copy's play counts for the original
     dup = db.execute("SELECT 1 FROM plays WHERE track_id=? AND listener=? AND played_at>?",
                      (s["id"], listener, when - _PLAY_DEDUPE_SECS)).fetchone()
     if not dup:
@@ -6154,7 +6295,7 @@ def _sub_dispatch(m: str, ctx: _SubCtx, P, PL):
     if m in ("getAlbumList", "getAlbumList2"):
         return R({"albumList2" if m.endswith("2") else "albumList": {"album": _albums_list(idx, ctx, P)}})
     if m == "getRandomSongs":
-        pool = list(idx["songs"].values())
+        pool = [idx["songs"][i] for i in idx["listed"]]
         g = (P("genre") or "").lower()
         y0, y1 = _int(P, "fromYear", 0), _int(P, "toYear", 9999)
         pool = [s for s in pool if (not g or (s["genre"] or "").lower() == g) and
@@ -6163,7 +6304,7 @@ def _sub_dispatch(m: str, ctx: _SubCtx, P, PL):
         return R({"randomSongs": {"song": [ctx.song(s) for s in pick]}})
     if m == "getSongsByGenre":
         g = _need(P, "genre").lower()
-        hits = sorted((s for s in idx["songs"].values() if (s["genre"] or "").lower() == g), key=lambda s: (s["artist"] or "", s["album"] or "", s["track_num"] or 0))
+        hits = sorted((idx["songs"][i] for i in idx["listed"] if (idx["songs"][i]["genre"] or "").lower() == g), key=lambda s: (s["artist"] or "", s["album"] or "", s["track_num"] or 0))
         off, n = _int(P, "offset", 0), _int(P, "count", 10, 1, 500)
         return R({"songsByGenre": {"song": [ctx.song(s) for s in hits[off:off + n]]}})
     if m == "getGenres":
@@ -6180,7 +6321,7 @@ def _sub_dispatch(m: str, ctx: _SubCtx, P, PL):
             return items[_int(P, key + "Offset", 0):][:_int(P, key + "Count", 20, 0, 5000)]
         ars = sorted(idx["artists"].values(), key=lambda a: _sort_name(a["name"]).lower())
         als = sorted(idx["albums"].values(), key=lambda a: a["name"].lower())
-        sgs = sorted(idx["songs"].values(), key=lambda s: s["id"])
+        sgs = sorted((idx["songs"][i] for i in idx["listed"]), key=lambda s: s["id"])
         if q:
             ars = [a for a in ars if _match(q, a["name"])]
             als = [a for a in als if _match(q, a["name"], a["artist"])]
@@ -6674,6 +6815,647 @@ async def api_admin_lastfm_set(req: Request):
     return {"status": "ok"}
 
 _OPEN_PATHS.add("/api/lastfm/callback")
+
+# ── Station Lists: "The <Station> List", the songs each live radio station is playing this week ──
+def init_radio_plays_db():
+    db = get_db()
+    db.executescript("""
+        CREATE TABLE IF NOT EXISTS radio_plays (station TEXT NOT NULL, track_id INTEGER NOT NULL, played_at REAL NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_radio_plays ON radio_plays(station, played_at);
+    """)
+    db.commit(); db.close()
+
+def log_radio_play(sid: str, track_id: int):
+    try:
+        db = get_db()
+        db.execute("INSERT INTO radio_plays(station,track_id,played_at) VALUES(?,?,?)", (sid, track_id, _now()))
+        db.execute("DELETE FROM radio_plays WHERE played_at<?", (_now() - 120 * 86400,))   # keep ~4 months
+        db.commit(); db.close()
+    except Exception:
+        pass
+
+LIST_SIZE = 50
+_list_cache: dict = {}
+
+def _list_week():
+    """Lists refresh every Tuesday (like a weekly playlist): (start of this list's week, the Tuesday it updated)."""
+    today = _dt.date.today()
+    tue = today - _dt.timedelta(days=(today.weekday() - 1) % 7)
+    end = _dt.datetime.combine(tue, _dt.time())
+    return end.timestamp() - 7 * 86400, end.timestamp(), tue
+
+def _station_playlists(st: dict) -> list:
+    pls = list(st.get("rotation") or ["*"])
+    for b in st.get("blocks") or []:
+        pls += b.get("playlists") or []
+    return ["*"] if "*" in pls else sorted(set(pls))
+
+def station_list(st: dict) -> dict:
+    """Most-played on the station last week; topped up with songs from its schedule so it's never empty."""
+    w0, w1, tue = _list_week()
+    sid = st["id"]
+    db = get_db()
+    sig = db.execute("SELECT COUNT(*), MAX(played_at) FROM radio_plays WHERE station=? AND played_at>=?", (sid, w0 - 7 * 86400)).fetchone()
+    db.close()
+    key = (sid, w1, tuple(sig), st.get("rev", 0), json.dumps(_station_playlists(st)), st.get("explicit", True))
+    hit = _list_cache.get(sid)
+    if hit and hit[0] == key:
+        return hit[1]
+    db = get_db()
+    def ranked(a, b):
+        return [dict(r) for r in db.execute(
+            f"""SELECT {_TRACK_SEL}, COALESCE(t.album_artist,t.artist) AS main_artist, COUNT(*) AS spins, MAX(rp.played_at) AS last
+                FROM radio_plays rp JOIN songs t ON t.id=COALESCE((SELECT dup_of FROM tracks WHERE id=rp.track_id), rp.track_id)
+                WHERE rp.station=? AND rp.played_at>=? AND rp.played_at<?
+                GROUP BY t.id ORDER BY spins DESC, last DESC LIMIT ?""", (sid, a, b, LIST_SIZE))]
+    rows = ranked(w0, w1)
+    updated = tue
+    if len(rows) < 10:                                      # new station: use what it has played so far
+        rows = ranked(_now() - 7 * 86400, _now() + 1)
+        updated = _dt.date.today() if rows else tue
+    prev = {r["id"]: n for n, r in enumerate(ranked(w0 - 7 * 86400, w0))}
+    db.close()
+    have = {r["id"] for r in rows}
+    if len(rows) < LIST_SIZE:                               # top up from the schedule, same picks all week
+        pool = [t for t in _pool(_station_playlists(st), st.get("explicit", True) is not False) if t["id"] not in have]
+        rng = _random.Random(f"{sid}:{tue.isoformat()}")
+        rng.shuffle(pool)
+        extra = [t["id"] for t in pool[:LIST_SIZE - len(rows)]]
+        if extra:
+            db = get_db()
+            got = {r["id"]: dict(r) for r in db.execute(
+                f"SELECT {_TRACK_SEL}, COALESCE(t.album_artist,t.artist) AS main_artist FROM songs t WHERE t.id IN ({','.join('?' * len(extra))})", extra)}
+            db.close()
+            rows += [dict(got[i], spins=0) for i in extra if i in got]
+    for n, r in enumerate(rows):
+        r["is_new"] = r["id"] not in prev and bool(prev)
+        r.pop("last", None)
+    label = f"{state['name']} {st['name']}"                  # e.g. "leon.music 1", "leon.music Hits"
+    out = {"sid": sid, "id": f"list-{sid}", "title": f"The {st['name']} List", "station": label,
+           "c1": st.get("c1") or "#e5282a", "c2": st.get("c2") or "", "updated": updated.isoformat(),
+           "description": (f"{label} plays the best of your library. The songs on this list are the ones in heavy "
+                           f"rotation on the station this week; it updates every Tuesday, so like the ones you love."),
+           "tracks": rows, "count": len(rows), "duration": sum(int(r["duration"] or 0) for r in rows),
+           "covers": [c for c in dict.fromkeys(r["cover_id"] for r in rows if r["cover_id"])][:4],
+           "explicit": st.get("explicit", True) is not False,
+           "cover": f"/api/radio/lists/{sid}/cover.jpg?v={updated.isoformat()}-{rows[0]['id'] if rows else 0}-{st.get('rev', 0)}"}
+    _list_cache[sid] = (key, out)
+    return out
+
+def _list_stations() -> list:
+    cfg = _bc_cfg()
+    if not cfg.get("live"):
+        return []
+    return [s for s in cfg.get("stations", []) if s.get("enabled", True)]
+
+@api.get("/api/radio/lists")
+def api_radio_lists():
+    out = []
+    for st in _list_stations():
+        l = station_list(st)
+        if l["count"]:
+            out.append({k: v for k, v in l.items() if k != "tracks"})
+    return out
+
+@api.get("/api/radio/lists/{sid}")
+def api_radio_list(sid: str):
+    st = next((s for s in _list_stations() if s["id"] == sid), None)
+    if not st:
+        raise HTTPException(404, "No such station")
+    return station_list(st)
+
+_list_cover_cache: dict = {}
+
+@api.get("/api/radio/lists/{sid}/cover.jpg")
+def api_radio_list_cover(sid: str, v: str = ""):
+    st = next((s for s in _list_stations() if s["id"] == sid), None)
+    if not st:
+        raise HTTPException(404)
+    l = station_list(st)
+    key = (sid, l["cover"], state.get("name"))
+    if key not in _list_cover_cache:
+        _list_cover_cache.clear() if len(_list_cover_cache) > 40 else None
+        _list_cover_cache[key] = _make_list_cover(st, l)
+    return Response(_list_cover_cache[key], media_type="image/jpeg", headers={"Cache-Control": "public,max-age=604800"})
+
+def _hex_rgb(h, d=(229, 40, 42)):
+    h = (h or "").lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) if len(h) == 6 else d
+
+def _make_list_cover(st: dict, l: dict) -> bytes:
+    """Photo of this week's #1 (artist photo, else its album art) under a neon 'THE <STATION>' / 'LIST' sign."""
+    from PIL import ImageOps, ImageFilter, ImageChops
+    S = 600
+    c1, c2 = _hex_rgb(st.get("c1")), _hex_rgb(st.get("c2"), None) or _hex_rgb(st.get("c1"))
+    base = None
+    top = l["tracks"][0] if l["tracks"] else None
+    if top:
+        jpg, _ = _pic_paths(top.get("main_artist") or top["artist"] or "")
+        try:
+            if top["cover_id"]:
+                db = get_db(); r = db.execute("SELECT data FROM covers WHERE id=?", (top["cover_id"],)).fetchone(); db.close()
+                if r: base = Image.open(io.BytesIO(r[0])).convert("RGB")
+            if base is None and jpg.exists():
+                base = Image.open(jpg).convert("RGB")
+        except Exception:
+            base = None
+    if base is None:
+        base = Image.new("RGB", (S, S), tuple(int(c * .35) for c in c1))
+    base = ImageOps.fit(base, (S, S), Image.LANCZOS)
+    # moody grade: desaturate a little, darken, wash with the station colour
+    grey = ImageOps.grayscale(base).convert("RGB")
+    base = Image.blend(base, grey, .35)
+    tint = Image.new("RGB", (S, S), tuple(int(c * .55) for c in c1))
+    base = ImageChops.multiply(base, Image.blend(Image.new("RGB", (S, S), (255, 255, 255)), tint, .55))
+    shade = Image.new("L", (S, S))
+    sd = ImageDraw.Draw(shade)
+    for x in range(S):                                         # darker towards the right where the sign sits
+        sd.line([(x, 0), (x, S)], fill=int(170 * max(0, (x - S * .25) / (S * .75)) ** 1.3))
+    base = Image.composite(Image.new("RGB", (S, S), (8, 6, 10)), base, shade)
+    lum = lambda c: .3 * c[0] + .59 * c[1] + .11 * c[2]
+    glow_c = max((c1, c2), key=lambda c: lum(c) + 60 * (max(c) - min(c)) / 255)   # the brighter, more colourful one
+    if lum(glow_c) < 60:
+        glow_c = _hex_rgb(state.get("accent"))
+    neon = tuple(min(255, int(c * .55 + 255 * .45)) for c in glow_c)
+    small = f"THE {st['name'].upper()}"
+    layer = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    fs = _fit_text(d, small, _BLACK, int(S * .62), 36, 16)
+    big = _fit_text(d, "LIST", _BLACK, int(S * .72), 230, 80)
+    bw = d.textlength("LIST", font=big)
+    sw = d.textlength(small, font=fs)
+    right = S - 34
+    y_big = int(S * .40)
+    d.text((right - sw, y_big - fs.size - 14), small, font=fs, fill=neon + (255,))
+    # outlined neon letters
+    d.text((right - bw, y_big), "LIST", font=big, fill=(0, 0, 0, 0), stroke_width=5, stroke_fill=neon + (255,))
+    glow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    gd.text((right - sw, y_big - fs.size - 14), small, font=fs, fill=glow_c + (255,))
+    gd.text((right - bw, y_big), "LIST", font=big, fill=(0, 0, 0, 0), stroke_width=12, stroke_fill=glow_c + (255,))
+    glow = glow.filter(ImageFilter.GaussianBlur(14))
+    out = base.convert("RGBA")
+    out = Image.alpha_composite(out, glow)
+    out = Image.alpha_composite(out, glow)
+    out = Image.alpha_composite(out, layer)
+    # brand, top right
+    bd = ImageDraw.Draw(out)
+    bf = _font(_BLACK, 24)
+    brand = state.get("name") or "leon.music"
+    bd.text((S - 26 - bd.textlength(brand, font=bf), 22), brand, font=bf, fill=(255, 255, 255, 235))
+    b = io.BytesIO(); out.convert("RGB").save(b, "JPEG", quality=88)
+    return b.getvalue()
+
+# ── DJ Mixes: a federated catalogue of mixes ("mix hubs") ─────────────────────
+# A mix hub is any static website with a hub.json (GitHub Pages, a Cloudflare tunnel, …). Each mix is one long
+# audio file plus a CUE sheet. Installing a mix downloads both, cuts the mix into its songs (so they work everywhere:
+# search, charts, Subsonic apps, radio) and keeps the full file so the web player can play the mix without gaps.
+MIXES_DIR = Path.home() / ".leon-music" / "mixes"
+MIXES_DIR.mkdir(parents=True, exist_ok=True)
+MIX_MAX_BYTES = 2 * 1024 ** 3
+HUB_FORMAT = 1
+_MIX_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}$")
+_mix_jobs: dict = {}            # mix id -> {"state","progress","message","title"}
+_mix_lock = threading.Lock()
+
+def init_mixes_db():
+    db = get_db()
+    cols = {r[1] for r in db.execute("PRAGMA table_info(tracks)")}
+    for col, decl in (("mix_id", "TEXT"), ("mix_start", "REAL"), ("mix_end", "REAL")):
+        if col not in cols:
+            db.execute(f"ALTER TABLE tracks ADD COLUMN {col} {decl}")
+    db.executescript("""
+        CREATE TABLE IF NOT EXISTS mix_curators (
+            id TEXT PRIMARY KEY, hub TEXT, name TEXT, bio TEXT, url TEXT, color TEXT, added REAL
+        );
+        CREATE TABLE IF NOT EXISTS mixes (
+            id TEXT PRIMARY KEY, hub TEXT, curator_id TEXT, title TEXT, dj TEXT, collection TEXT, year INTEGER,
+            genre TEXT, explicit INTEGER DEFAULT 0, description TEXT, cover_id TEXT, color TEXT, audio TEXT,
+            duration REAL, added REAL
+        );
+        CREATE INDEX IF NOT EXISTS idx_tracks_mix ON tracks(mix_id);
+        DROP VIEW IF EXISTS songs;
+        CREATE VIEW songs AS SELECT * FROM tracks WHERE dup_of IS NULL AND mix_id IS NULL;
+        CREATE VIEW IF NOT EXISTS all_songs AS SELECT * FROM tracks WHERE dup_of IS NULL;
+    """)
+    for tid, title in db.execute("SELECT id,title FROM tracks WHERE mix_id IS NOT NULL").fetchall():   # mixes added before "(Mixed)"
+        new = _mixed_title(title or "")
+        if new != title:
+            db.execute("UPDATE tracks SET title=? WHERE id=?", (new, tid))
+    db.commit(); db.close()
+
+# ── CUE sheets ──
+def parse_cue(text: str) -> dict:
+    """{'title','performer','tracks':[{'num','title','performer','start'}]} from a CUE sheet (INDEX 01 = start)."""
+    top = {"title": None, "performer": None}
+    tracks, cur = [], None
+    unq = lambda v: (v.strip()[1:-1] if len(v.strip()) >= 2 and v.strip()[0] == v.strip()[-1] == '"' else v.strip())
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        cmd, _, rest = line.partition(" ")
+        cmd = cmd.upper()
+        if cmd == "TRACK":
+            try:
+                num = int(rest.split()[0])
+            except (ValueError, IndexError):
+                continue
+            cur = {"num": num, "title": None, "performer": None, "start": None}
+            tracks.append(cur)
+        elif cmd in ("TITLE", "PERFORMER"):
+            (cur if cur is not None else top)[cmd.lower()] = unq(rest)[:300]
+        elif cmd == "INDEX" and cur is not None:
+            parts = rest.split()
+            if len(parts) == 2 and parts[0].lstrip("0") in ("1",):
+                try:
+                    mm, ss, ff = (int(x) for x in parts[1].split(":"))
+                    cur["start"] = mm * 60 + ss + ff / 75
+                except ValueError:
+                    pass
+    tracks = [t for t in tracks if t["start"] is not None]
+    tracks.sort(key=lambda t: t["start"])
+    out, last = [], -1.0
+    for t in tracks:                                    # drop zero-length / out-of-order entries
+        if t["start"] > last + 0.5:
+            out.append(t); last = t["start"]
+    if out:
+        out[0]["start"] = 0.0                           # the intro belongs to the first song
+    return {"title": top["title"], "performer": top["performer"], "tracks": out[:500]}
+
+def _decode_text(b: bytes) -> str:
+    for enc in ("utf-8-sig", "cp1252", "latin-1"):
+        try:
+            return b.decode(enc)
+        except UnicodeDecodeError:
+            pass
+    return b.decode("utf-8", "replace")
+
+# ── Hubs ──
+def _hub_url(base: str, ref: str) -> str:
+    """Hub files may be relative to hub.json (same host) or absolute (e.g. GitHub release assets)."""
+    if not ref:
+        return ""
+    u = urljoin(base, ref)
+    if not u.lower().startswith(("http://", "https://")):
+        raise ValueError("Hub links must be http(s)")
+    return u
+
+def _clean_hub(url: str) -> str:
+    v = _clean_url(url)
+    if not v:
+        raise HTTPException(400, "Enter the hub's address, e.g. https://example.github.io/mixes/")
+    return v if v.endswith(".json") else v.rstrip("/") + "/hub.json"
+
+def fetch_hub(url: str) -> dict:
+    raw = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": f"leon.music/{APP_VERSION}"}), timeout=15).read(5_000_001)
+    if len(raw) > 5_000_000:
+        raise ValueError("hub.json is too big")
+    hub = json.loads(raw.decode("utf-8-sig"))
+    if not isinstance(hub, dict) or int(hub.get("format", 0)) > HUB_FORMAT:
+        raise ValueError("This hub needs a newer leon.music")
+    curators = {}
+    for c in hub.get("curators") or []:
+        if isinstance(c, dict) and _MIX_ID.match(str(c.get("id", ""))):
+            curators[c["id"]] = {"id": c["id"], "name": str(c.get("name") or c["id"])[:80], "bio": str(c.get("bio") or "")[:2000],
+                                 "url": _clean_url(c.get("url")) or "", "color": _clean_color(c.get("color")),
+                                 "avatar": _hub_url(url, c.get("avatar") or ""), "banner": _hub_url(url, c.get("banner") or "")}
+    mixes = []
+    for m in hub.get("mixes") or []:
+        if not (isinstance(m, dict) and _MIX_ID.match(str(m.get("id", ""))) and m.get("curator") in curators):
+            continue
+        a = m.get("audio") or {}
+        try:
+            mixes.append({"id": m["id"], "title": str(m.get("title") or m["id"])[:200], "dj": str(m.get("dj") or "")[:120],
+                          "curator": m["curator"], "collection": str(m.get("collection") or "")[:120],
+                          "year": int(m["year"]) if str(m.get("year", "")).isdigit() else None,
+                          "genre": str(m.get("genre") or "Dance")[:60], "explicit": bool(m.get("explicit")),
+                          "description": str(m.get("description") or "")[:2000], "color": _clean_color(m.get("color")),
+                          "cover": _hub_url(url, m.get("cover") or ""), "cue": _hub_url(url, m.get("cue") or ""),
+                          "audio": _hub_url(url, a.get("url") or ""), "size": int(a.get("size") or 0),
+                          "sha256": str(a.get("sha256") or "").lower(), "duration": float(m.get("duration") or 0),
+                          "tracks": int(m.get("tracks") or 0)})
+        except (ValueError, TypeError):
+            continue
+    mixes = [m for m in mixes if m["audio"] and m["cue"]]
+    return {"name": str(hub.get("name") or "Mix hub")[:80], "description": str(hub.get("description") or "")[:1000],
+            "apply": _clean_url(hub.get("apply")) or "", "curators": list(curators.values()), "mixes": mixes, "url": url}
+
+def _download(url: str, dest: Path, limit: int, job: dict = None, size_hint: int = 0) -> str:
+    """Stream a file to disk (size-capped), returning its sha256."""
+    h = hashlib.sha256()
+    rq = urllib.request.Request(url, headers={"User-Agent": f"leon.music/{APP_VERSION}"})
+    got = 0
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    with urllib.request.urlopen(rq, timeout=30) as r, open(tmp, "wb") as f:
+        total = int(r.headers.get("Content-Length") or size_hint or 0)
+        if total > limit:
+            raise ValueError("File is too big")
+        while True:
+            chunk = r.read(1 << 20)
+            if not chunk:
+                break
+            got += len(chunk)
+            if got > limit:
+                raise ValueError("File is too big")
+            h.update(chunk); f.write(chunk)
+            if job is not None and total:
+                job["progress"] = 5 + int(80 * got / total)
+                job["message"] = f"Downloading… {got // (1 << 20)} of {total // (1 << 20)} MB"
+    tmp.replace(dest)
+    return h.hexdigest()
+
+def _save_image(url: str, dest: Path, size: tuple):
+    if not url:
+        return
+    try:
+        data = _fetch_bytes(url, timeout=15, limit=8_000_000)
+        im = ImageOps_fit(Image.open(io.BytesIO(data)).convert("RGB"), size)
+        im.save(dest, "JPEG", quality=88)
+    except Exception:
+        pass
+
+def ImageOps_fit(im, size):
+    from PIL import ImageOps
+    return ImageOps.fit(im, size, Image.LANCZOS)
+
+def _avg_color(data: bytes) -> str:
+    try:
+        im = Image.open(io.BytesIO(data)).convert("RGB").resize((24, 24))
+        px = list(im.get_flattened_data() if hasattr(im, "get_flattened_data") else im.getdata())   # getdata is deprecated in Pillow 12+
+        px.sort(key=lambda c: -(max(c) - min(c)))              # favour colourful pixels
+        sel = px[: max(1, len(px) // 4)]
+        r, g, b = (sum(c[i] for c in sel) // len(sel) for i in range(3))
+        k = 0.55 if (r * .3 + g * .59 + b * .11) > 120 else 0.8   # keep it dark enough for white text
+        return "#%02x%02x%02x" % (int(r * k), int(g * k), int(b * k))
+    except Exception:
+        return ""
+
+def install_mix(hub_url: str, mix_id: str):
+    job = _mix_jobs.setdefault(mix_id, {})
+    job.update(state="working", progress=1, message="Reading the hub…")
+    folder = MIXES_DIR / mix_id
+    try:
+        hub = fetch_hub(hub_url)
+        m = next((x for x in hub["mixes"] if x["id"] == mix_id), None)
+        if not m:
+            raise ValueError("This mix isn't on the hub any more")
+        job["title"] = m["title"]
+        cur = next(c for c in hub["curators"] if c["id"] == m["curator"])
+        db = get_db()
+        clash = db.execute("SELECT hub FROM mixes WHERE id=?", (mix_id,)).fetchone()
+        db.close()
+        if clash and clash[0] != hub_url:
+            raise ValueError("A different hub already has a mix with this id")
+        folder.mkdir(parents=True, exist_ok=True)
+        cue = parse_cue(_decode_text(_fetch_bytes(m["cue"], timeout=20, limit=2_000_000)))
+        if not cue["tracks"]:
+            raise ValueError("The CUE sheet has no tracks")
+        ext = Path(urlparse(m["audio"]).path).suffix.lower()
+        if ext not in AUDIO_EXTS:
+            ext = ".mp3"
+        audio = folder / ("mix" + ext)
+        digest = _download(m["audio"], audio, MIX_MAX_BYTES, job, m["size"])
+        if m["sha256"] and digest != m["sha256"]:
+            raise ValueError("The download is damaged (checksum doesn't match). Try again")
+        job.update(progress=86, message="Reading the mix…")
+        info = read_tags(audio)
+        total = float(info["duration"] or m["duration"] or 0)
+        if total <= 0:
+            raise ValueError("Couldn't read the mix's length")
+        segs = [t for t in cue["tracks"] if t["start"] < total - 1]
+        for i, t in enumerate(segs):
+            t["end"] = segs[i + 1]["start"] if i + 1 < len(segs) else total
+        # cover + curator images
+        cover_bytes = None
+        if m["cover"]:
+            try:
+                cover_bytes = _square_jpeg(_fetch_bytes(m["cover"], timeout=20, limit=10_000_000), 800)
+            except Exception:
+                cover_bytes = None
+        cover_bytes = cover_bytes or info.get("cover_data")
+        cdir = MIXES_DIR / "_curators"; cdir.mkdir(exist_ok=True)
+        _save_image(cur["avatar"], cdir / f"{cur['id']}.avatar.jpg", (400, 400))
+        _save_image(cur["banner"], cdir / f"{cur['id']}.banner.jpg", (2400, 600))
+        # cut the songs out (stream copy: fast and lossless)
+        job.update(progress=90, message=f"Cutting {len(segs)} songs…")
+        parts = []
+        for i, t in enumerate(segs):
+            out = folder / f"{i + 1:03d}{ext}"
+            ok = False
+            if FFMPEG:
+                cmd = [FFMPEG, "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-ss", f"{t['start']:.3f}", "-i", str(audio),
+                       "-t", f"{t['end'] - t['start']:.3f}", "-map", "0:a:0", "-c", "copy", "-map_metadata", "-1", str(out)]
+                ok = _subprocess.run(cmd, stdout=_subprocess.DEVNULL, stderr=_subprocess.DEVNULL,
+                                     creationflags=_NO_WINDOW, timeout=300).returncode == 0 and out.exists()
+            parts.append(out if ok else audio)               # no ffmpeg: songs point at the full mix (web player still works)
+            job["progress"] = 90 + int(8 * (i + 1) / len(segs))
+        # write everything
+        dj = m["dj"] or cue["performer"] or cur["name"]
+        db = get_db()
+        cover_id = None
+        if cover_bytes:
+            cover_id = hashlib.md5(cover_bytes).hexdigest()
+            db.execute("INSERT OR IGNORE INTO covers(id,data) VALUES(?,?)", (cover_id, cover_bytes))
+        old = {r["mix_start"]: r["id"] for r in db.execute("SELECT id,mix_start FROM tracks WHERE mix_id=?", (mix_id,))}
+        keep = set()
+        for i, (t, p) in enumerate(zip(segs, parts)):
+            row = (str(p), _mixed_title(t["title"] or f"Track {i + 1}"), (t["performer"] or dj)[:300], m["title"], dj, i + 1, 1,
+                   m["year"], m["genre"], t["end"] - t["start"], int(info.get("bitrate") or 0),
+                   p.stat().st_size if p.exists() else 0, cover_id, None, _now(), 1 if m["explicit"] else 0,
+                   mix_id, round(t["start"], 3), round(t["end"], 3))
+            tid = next((v for k, v in old.items() if abs(k - t["start"]) < 0.5), None)    # re-install keeps plays/likes
+            if tid:
+                db.execute("""UPDATE tracks SET path=?,title=?,artist=?,album=?,album_artist=?,track_num=?,disc_num=?,year=?,genre=?,
+                              duration=?,bitrate=?,size=?,cover_id=?,playlist=?,mtime=?,explicit=?,mix_id=?,mix_start=?,mix_end=? WHERE id=?""",
+                           row + (tid,))
+                keep.add(tid)
+            else:
+                db.execute("""INSERT INTO tracks(path,title,artist,album,album_artist,track_num,disc_num,year,genre,duration,bitrate,size,
+                              cover_id,playlist,mtime,explicit,mix_id,mix_start,mix_end) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", row)
+        for tid in set(old.values()) - keep:
+            db.execute("DELETE FROM tracks WHERE id=?", (tid,))
+        db.execute("""INSERT OR REPLACE INTO mix_curators(id,hub,name,bio,url,color,added)
+                      VALUES(?,?,?,?,?,?,COALESCE((SELECT added FROM mix_curators WHERE id=?),?))""",
+                   (cur["id"], hub_url, cur["name"], cur["bio"], cur["url"], cur["color"], cur["id"], _now()))
+        db.execute("""INSERT OR REPLACE INTO mixes(id,hub,curator_id,title,dj,collection,year,genre,explicit,description,cover_id,color,
+                      audio,duration,added) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,COALESCE((SELECT added FROM mixes WHERE id=?),?))""",
+                   (mix_id, hub_url, cur["id"], m["title"], dj, m["collection"], m["year"], m["genre"], 1 if m["explicit"] else 0,
+                    m["description"], cover_id, m["color"] or (_avg_color(cover_bytes) if cover_bytes else ""), str(audio), total,
+                    mix_id, _now()))
+        db.commit(); db.close()
+        for f in folder.iterdir():                          # leftovers from an older version of this mix
+            if f.is_file() and f not in parts and f != audio:
+                try: f.unlink()
+                except OSError: pass
+        job.update(state="done", progress=100, message=f"Added {len(segs)} songs")
+    except Exception as e:
+        job.update(state="error", progress=100, message=str(e)[:300] or type(e).__name__)
+        for f in folder.glob("*.part"):
+            try: f.unlink()
+            except OSError: pass
+
+def _mixed_title(title: str) -> str:
+    """'Song' -> 'Song (Mixed)', so listeners can tell a song comes from a DJ mix. Titles that already say so stay."""
+    title = title.strip()[:290]
+    return title if re.search(r"[(\[]mixed[)\]]\s*$", title, re.I) else f"{title} (Mixed)"
+
+def remove_mix(mix_id: str):
+    db = get_db()
+    ids = [r[0] for r in db.execute("SELECT id FROM tracks WHERE mix_id=?", (mix_id,))]
+    if ids:
+        q = ",".join("?" * len(ids))
+        db.execute(f"DELETE FROM user_playlist_tracks WHERE track_id IN ({q})", ids)
+        db.execute(f"DELETE FROM likes WHERE track_id IN ({q})", ids)
+        db.execute(f"DELETE FROM tracks WHERE id IN ({q})", ids)
+    db.execute("DELETE FROM mixes WHERE id=?", (mix_id,))
+    db.execute("DELETE FROM mix_curators WHERE id NOT IN (SELECT curator_id FROM mixes)")
+    db.commit(); db.close()
+    import shutil as _sh
+    if _MIX_ID.match(mix_id):
+        _sh.rmtree(MIXES_DIR / mix_id, ignore_errors=True)
+    _mix_jobs.pop(mix_id, None)
+
+# ── Admin API ──
+@api.get("/api/admin/mixhubs")
+def api_mixhubs(req: Request):
+    _require_admin(req)
+    return {"hubs": load_config().get("mix_hubs", []), "ffmpeg": bool(FFMPEG)}
+
+@api.post("/api/admin/mixhubs")
+async def api_mixhubs_add(req: Request):
+    _require_admin(req)
+    url = _clean_hub((await req.json()).get("url"))
+    try:
+        hub = await run_in_threadpool(fetch_hub, url)
+    except Exception as e:
+        raise HTTPException(400, f"Couldn't read that hub: {e}"[:200])
+    hubs = [h for h in load_config().get("mix_hubs", []) if h["url"] != url] + [{"url": url, "name": hub["name"]}]
+    update_config(mix_hubs=hubs)
+    return {"hubs": hubs}
+
+@api.delete("/api/admin/mixhubs")
+def api_mixhubs_del(req: Request, url: str):
+    _require_admin(req)
+    hubs = [h for h in load_config().get("mix_hubs", []) if h["url"] != url]
+    update_config(mix_hubs=hubs)
+    return {"hubs": hubs}
+
+@api.get("/api/admin/mixhub")
+def api_mixhub_browse(req: Request, url: str):
+    _require_admin(req)
+    if url not in {h["url"] for h in load_config().get("mix_hubs", [])}:
+        raise HTTPException(400, "Add this hub first")
+    try:
+        hub = fetch_hub(url)
+    except Exception as e:
+        raise HTTPException(502, f"Couldn't read the hub: {e}"[:200])
+    db = get_db()
+    have = {r[0] for r in db.execute("SELECT id FROM mixes")}
+    db.close()
+    for m in hub["mixes"]:
+        m["installed"] = m["id"] in have
+        j = _mix_jobs.get(m["id"])
+        m["job"] = dict(j) if j else None
+    return hub
+
+@api.post("/api/admin/mixes")
+async def api_mix_install(req: Request):
+    _require_admin(req)
+    b = await req.json()
+    url, mid = str(b.get("hub") or ""), str(b.get("id") or "")
+    if url not in {h["url"] for h in load_config().get("mix_hubs", [])} or not _MIX_ID.match(mid):
+        raise HTTPException(400, "Unknown hub or mix")
+    with _mix_lock:
+        j = _mix_jobs.get(mid)
+        if j and j.get("state") == "working":
+            return {"status": "already working"}
+        _mix_jobs[mid] = {"state": "working", "progress": 0, "message": "Starting…", "title": mid}
+    threading.Thread(target=install_mix, args=(url, mid), daemon=True).start()
+    return {"status": "started"}
+
+@api.get("/api/admin/mixes/jobs")
+def api_mix_jobs(req: Request):
+    _require_admin(req)
+    return _mix_jobs
+
+@api.delete("/api/admin/mixes/{mix_id}")
+def api_mix_remove(mix_id: str, req: Request):
+    _require_admin(req)
+    remove_mix(mix_id)
+    return {"status": "ok"}
+
+# ── Listener API ──
+def _mix_summary(r) -> dict:
+    return {"id": r["id"], "title": r["title"], "dj": r["dj"], "curator": r["curator_id"], "collection": r["collection"] or "",
+            "year": r["year"], "genre": r["genre"], "explicit": bool(r["explicit"]), "cover_id": r["cover_id"],
+            "color": r["color"] or "", "duration": r["duration"], "added": r["added"]}
+
+def _curator_obj(r, n=0) -> dict:
+    cdir = MIXES_DIR / "_curators"
+    return {"id": r["id"], "name": r["name"], "bio": r["bio"] or "", "url": r["url"] or "", "color": r["color"] or "",
+            "avatar": f"/api/mixes/curators/{r['id']}/avatar" if (cdir / f"{r['id']}.avatar.jpg").exists() else "",
+            "banner": f"/api/mixes/curators/{r['id']}/banner" if (cdir / f"{r['id']}.banner.jpg").exists() else "",
+            "mixes": n}
+
+@api.get("/api/mixes")
+def api_mixes():
+    db = get_db()
+    mixes = [_mix_summary(r) for r in db.execute("SELECT * FROM mixes ORDER BY year DESC, added DESC")]
+    counts: dict = {}
+    for m in mixes:
+        counts[m["curator"]] = counts.get(m["curator"], 0) + 1
+    curators = [_curator_obj(r, counts.get(r["id"], 0)) for r in db.execute("SELECT * FROM mix_curators ORDER BY name")]
+    db.close()
+    return {"curators": curators, "mixes": mixes}
+
+@api.get("/api/mixes/curators/{cid}")
+def api_mix_curator(cid: str):
+    db = get_db()
+    r = db.execute("SELECT * FROM mix_curators WHERE id=?", (cid,)).fetchone()
+    if not r:
+        db.close(); raise HTTPException(404, "Curator not found")
+    mixes = [_mix_summary(x) for x in db.execute("SELECT * FROM mixes WHERE curator_id=? ORDER BY year DESC, added DESC", (cid,))]
+    db.close()
+    groups: dict = {}
+    for m in mixes:
+        groups.setdefault(m["collection"] or "Mixes", []).append(m)
+    return {**_curator_obj(r, len(mixes)), "collections": [{"name": k, "mixes": v} for k, v in groups.items()]}
+
+@api.get("/api/mixes/curators/{cid}/{kind}")
+def api_mix_curator_img(cid: str, kind: str):
+    if kind not in ("avatar", "banner") or not _MIX_ID.match(cid):
+        raise HTTPException(404)
+    f = MIXES_DIR / "_curators" / f"{cid}.{kind}.jpg"
+    if not f.exists():
+        raise HTTPException(404)
+    return FileResponse(str(f), media_type="image/jpeg", headers={"Cache-Control": "public,max-age=86400"})
+
+@api.get("/api/mixes/{mix_id}")
+def api_mix(mix_id: str):
+    db = get_db()
+    r = db.execute("SELECT * FROM mixes WHERE id=?", (mix_id,)).fetchone()
+    if not r:
+        db.close(); raise HTTPException(404, "Mix not found")
+    tracks = [dict(t) for t in db.execute(
+        f"SELECT {_TRACK_COLS},mix_id,mix_start,mix_end,COALESCE(explicit,0) AS explicit FROM tracks WHERE mix_id=? ORDER BY mix_start", (mix_id,))]
+    cur = db.execute("SELECT * FROM mix_curators WHERE id=?", (r["curator_id"],)).fetchone()
+    db.close()
+    return {**_mix_summary(r), "description": r["description"] or "", "curator": _curator_obj(cur) if cur else None,
+            "tracks": tracks}
+
+@api.get("/api/mixes/{mix_id}/audio")
+def api_mix_audio(mix_id: str):
+    db = get_db()
+    r = db.execute("SELECT audio FROM mixes WHERE id=?", (mix_id,)).fetchone()
+    db.close()
+    if not r or not Path(r[0]).exists():
+        raise HTTPException(404)
+    return FileResponse(r[0], media_type=mimetypes.guess_type(r[0])[0] or "audio/mpeg")
+
+init_radio_plays_db()
+init_dupes_db()          # runs last: init_db() needs helpers defined further down
+init_mixes_db()
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
