@@ -26,7 +26,7 @@
   <b>Getting started</b>
   <a href="#install">Install</a><a href="#first-run">First run</a><a href="#library">Organising your library</a>
   <b>Using leon.music</b>
-  <a href="#home">Home &amp; Made for You</a><a href="#search">Search, genres &amp; decades</a><a href="#new">New &amp; Charts</a><a href="#rewind">Rewind</a><a href="#likes">Likes &amp; playlists</a><a href="#lyrics">Lyrics</a><a href="#albums">Album pages</a><a href="#explicit">Explicit songs</a>
+  <a href="#home">Home &amp; Made for You</a><a href="#search">Search, genres &amp; decades</a><a href="#new">New &amp; Charts</a><a href="#rewind">Rewind</a><a href="#christmas">Christmas</a><a href="#likes">Likes &amp; playlists</a><a href="#covers">Playlist covers</a><a href="#lyrics">Lyrics</a><a href="#albums">Album pages</a><a href="#explicit">Explicit songs</a>
   <b>Sharing</b>
   <a href="#accounts">Accounts &amp; logins</a><a href="#profiles">Profiles &amp; friends</a><a href="#remote">Listening from anywhere</a>
   <b>Live radio</b>
@@ -95,6 +95,9 @@ python leon_music.py</pre></div>
 <li><b>End of Year Rewind</b>: every December a banner on Home opens a summary of the whole year.</li></ul>
 <p>Minutes assume a counted song was played in full, so totals are a close estimate.</p>
 
+<h2 id="christmas">Christmas</h2>
+<p>Search has a <b>🎄 Christmas</b> tile (it moves to the front from 15 November to 6 January). It collects everything Christmas: songs whose genre, folder or album mentions Christmas, Xmas, holiday, jul or noël. The page has feature cards (your <b>Holiday station</b> when it's on air, Christmas folder playlists, the song of the season), special playlists (<b>Christmas Classics</b>, <b>Cozy Christmas</b>, <b>Christmas Party</b>, <b>New Christmas Music</b>), top songs, albums and artists.</p>
+
 <h2 id="likes">Likes &amp; your own playlists</h2>
 <div class="duo"><div class="window"><img class="zoomable" src="assets/playlist.jpg" alt="A user playlist" loading="lazy"></div><div class="window"><img class="zoomable" src="assets/album-featured.jpg" alt="Album page with explicit badges" loading="lazy"></div></div>
 <ul><li><b>♥ Like</b> any song with the heart on a song row or in the player, or from its <b>···</b> menu. Liked songs collect in <b>Liked Songs</b> at the top of the sidebar's Playlists, newest first.</li>
@@ -110,6 +113,14 @@ python leon_music.py</pre></div>
 <li><b>Lyrics stored inside the file</b> (ID3 USLT, Vorbis <code>LYRICS</code>, iTunes lyrics).</li>
 <li><b><a href="https://lrclib.net">LRCLIB</a></b>, a free, open lyrics database, when online lookup is on. It receives the artist, title, album and length. Each song is looked up once; misses are retried after a week.</li></ol>
 <p>Turn online lookup off in the admin panel's <b>Artists</b> card ("Look up lyrics on LRCLIB").</p>
+
+<h2 id="covers">Playlist covers</h2>
+<p>Click a playlist's cover (or <b>🖼 Cover</b>) to open the <b>cover designer</b>. Admins get the same designer for folder playlists via <b>Design cover</b>.</p>
+<ul><li><b>Background:</b> your own photo (uploaded, up to 6 MB), a gradient, a blend or a solid colour. Admins can also paste an image URL for folder playlists.</li>
+<li><b>Overlay:</b> none, fade, darken or tint, with a strength slider.</li>
+<li><b>Text:</b> title and subtitle, position, alignment, size, colour and capitals.</li>
+<li><b>Fonts:</b> four built-in styles, or <b>More fonts on this computer…</b> to pick any font installed on the computer running leon.music. Each name is shown in its own font.</li></ul>
+<p>The preview updates as you change things. <b>Remove</b> goes back to the automatic cover.</p>
 
 <h2 id="albums">Album pages</h2>
 <p>Under the track list, album pages show:</p>
@@ -331,6 +342,8 @@ pyinstaller --onefile --windowed --name "leon.music" leon_music.py</pre></div>
 <tr><td><code>GET /api/albums/related?album=</code></td><td>Featured On, More from, You May Also Like</td></tr>
 <tr><td><code>GET|PATCH /api/me/profile</code>, <code>GET /api/users/{name}</code></td><td>Profiles</td></tr>
 <tr><td><code>/api/me/friends</code>, <code>/api/me/friends/{name}</code></td><td>Friends and requests</td></tr>
+<tr><td><code>GET /api/christmas</code></td><td>The Christmas category page</td></tr>
+<tr><td><code>POST /api/covers/preview</code>, <code>GET /api/covers/fonts</code>, <code>/api/me/playlists/{id}/cover</code></td><td>Cover designer</td></tr>
 <tr><td><code>GET /api/explicit</code></td><td>IDs of explicit songs</td></tr>
 <tr><td><code>GET|POST /api/broadcast</code></td><td>Live radio setup (admin)</td></tr>
 <tr><td><code>/api/admin/*</code></td><td>Admin actions (users, settings, stations)</td></tr></table>

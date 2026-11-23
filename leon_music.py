@@ -622,6 +622,12 @@ def api_cover(cover_id: str):
     return Response(content=row["data"], media_type="image/jpeg",
                     headers={"Cache-Control":"public,max-age=86400"})
 
+try:                                         # Starlette 0.39+ handles HTTP Range in FileResponse
+    import starlette as _st
+    _NATIVE_RANGES = tuple(int(x) for x in _st.__version__.split(".")[:2]) >= (0, 39)
+except Exception:
+    _NATIVE_RANGES = False
+
 @api.get("/api/stream/{track_id}")
 def api_stream(track_id: int, request: Request):
     db = get_db()
@@ -631,6 +637,9 @@ def api_stream(track_id: int, request: Request):
     if not path.exists(): raise HTTPException(404, "File missing from disk")
     size = path.stat().st_size
     mime = mimetypes.guess_type(str(path))[0] or "audio/mpeg"
+    if _NATIVE_RANGES:
+        # Starlette serves Range requests itself (206, seeking) and closes the file when a listener disconnects
+        return FileResponse(str(path), media_type=mime)
     rng  = request.headers.get("range")
     if rng:
         m = re.match(r"bytes=(\d+)-(\d*)", rng)
@@ -783,68 +792,23 @@ def _safe_name(name: str) -> str:
 
 @api.post("/api/playlist/{name}/cover")
 async def api_gen_cover(name: str, req: Request):
+    """Design a folder playlist's cover. Old clients that only send {"image_url"} get the classic look."""
     _require_admin(req)
     body = await req.json()
-    image_url = body.get("image_url", "").strip()
     label = state["playlist_names"].get(name, name)   # cover text follows the display name
-    if not image_url:
-        raise HTTPException(400, "image_url required")
+    raw = body.get("opts")
+    if raw is None:                                   # classic: photo, dark fade, text at the global position
+        raw = {"bg": "image", "overlay": "fade", "strength": 70, "pos": state.get("cover_text_pos", "center")}
+    opts = _clean_cover_opts(raw)
+    img = await run_in_threadpool(_cover_source, body, req, COVERS_DIR / f"{_safe_name(name)}.src.jpg")
+    if opts["bg"] == "image" and not img:
+        raise HTTPException(400, "Choose a photo, or pick a gradient or solid background")
     try:
-        req2 = urllib.request.Request(image_url, headers={"User-Agent": "leon.music/1.0"})
-        with urllib.request.urlopen(req2, timeout=10) as r:
-            img_data = r.read()
-    except Exception as e:
-        raise HTTPException(400, f"Could not download image: {e}")
-    try:
-        base = Image.open(io.BytesIO(img_data)).convert("RGBA")
-        base = base.resize((600, 600), Image.LANCZOS)
-        # Gradient overlay (bottom-heavy dark)
-        overlay = Image.new("RGBA", (600, 600), (0, 0, 0, 0))
-        od = ImageDraw.Draw(overlay)
-        for y in range(600):
-            alpha = int(80 + (y / 600) * 160)
-            od.line([(0, y), (600, y)], fill=(0, 0, 0, alpha))
-        base = Image.alpha_composite(base, overlay)
-        draw = ImageDraw.Draw(base)
-        # Font: try common paths
-        font_size = max(36, min(80, int(600 / max(len(label), 1) * 0.9)))
-        text = label.upper()
-        font_path = None
-        for fp in ["arialbd.ttf", "Arial Bold.ttf",
-                   "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                   "/System/Library/Fonts/Helvetica.ttc"]:
-            try: ImageFont.truetype(fp, font_size); font_path = fp; break
-            except: pass
-        def _font(sz):
-            return ImageFont.truetype(font_path, sz) if font_path else ImageFont.load_default()
-        # Shrink until the name fits inside the cover with a margin (long names used to overflow)
-        font = _font(font_size)
-        bb = draw.textbbox((0, 0), text, font=font)
-        while font_path and (bb[2] - bb[0]) > 540 and font_size > 14:
-            font_size -= 4
-            font = _font(font_size)
-            bb = draw.textbbox((0, 0), text, font=font)
-        tw, th = bb[2] - bb[0], bb[3] - bb[1]
-        # textbbox starts at an offset from the draw origin; subtract it so the ink is truly centred
-        margin = int(600 * 0.14)
-        pos = state.get("cover_text_pos", "center")
-        x = (600 - tw) // 2 - bb[0]
-        if pos == "top":      y = margin - bb[1]
-        elif pos == "bottom": y = 600 - margin - th - bb[1]
-        else:                 y = (600 - th) // 2 - bb[1]
-        # Shadow
-        draw.text((x + 3, y + 3), label.upper(), font=font, fill=(0, 0, 0, 180))
-        draw.text((x, y), label.upper(), font=font, fill=(255, 255, 255, 255))
-        # Save
-        out = io.BytesIO()
-        base.convert("RGB").save(out, "JPEG", quality=90)
-        cover_bytes = out.getvalue()
+        jpg = await run_in_threadpool(_save_cover, _safe_name(name), opts, label, img)
     except Exception as e:
         raise HTTPException(500, f"Image processing failed: {e}")
-    cover_path = COVERS_DIR / f"{_safe_name(name)}.jpg"
-    cover_path.write_bytes(cover_bytes)
-    return Response(content=cover_bytes, media_type="image/jpeg",
-                    headers={"Cache-Control": "no-cache"})
+    c = load_config(); c.setdefault("cover_designs", {})[name] = opts; save_config(c)
+    return Response(content=jpg, media_type="image/jpeg", headers={"Cache-Control": "no-cache"})
 
 @api.get("/api/playlist/{name}/cover")
 def api_playlist_cover(name: str):
@@ -1521,9 +1485,16 @@ def bc_sync():
         if sid not in want and sid not in _casters:
             _bc_status[sid].update(state="stopped", message="Off air", now=None)
 
-@api.on_event("startup")
-def _bc_autostart():
+from contextlib import asynccontextmanager as _acm
+
+@_acm
+async def _lifespan(_app):
+    """Server start-up: bring live radio stations back on air (replaces the deprecated @on_event)."""
     threading.Thread(target=bc_sync, daemon=True).start()
+    threading.Thread(target=system_fonts, daemon=True).start()     # warm the cover designer's font list
+    yield
+
+api.router.lifespan_context = _lifespan
 
 def _public_base(ice: dict) -> str:
     if ice.get("public_url"):
@@ -2170,7 +2141,7 @@ def api_new():
         FROM tracks WHERE album IS NOT NULL AND album<>''
         GROUP BY album ORDER BY MAX(added_at) DESC, MAX(mtime) DESC LIMIT 18""").fetchall()]
 
-    cutoff = (_dt.datetime.utcnow() - _dt.timedelta(days=_NEW_WINDOW_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+    cutoff = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=_NEW_WINDOW_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
     playlists = []
     for r in db.execute("""
         SELECT playlist AS name, COUNT(*) AS track_count, SUM(duration) AS total_duration,
@@ -3104,6 +3075,8 @@ def _pl_summary(db, row, me: int) -> dict:
         """SELECT t.cover_id FROM user_playlist_tracks p JOIN tracks t ON t.id=p.track_id
            WHERE p.playlist_id=? AND t.cover_id IS NOT NULL GROUP BY t.cover_id ORDER BY MIN(p.pos) LIMIT 4""", (d["id"],))]
     d["owner"] = _owner_name(db, d["user_id"])
+    d["has_cover"] = (COVERS_DIR / f"u{d['id']}.jpg").exists()
+    d.pop("cover_opts", None)
     d["mine"] = d["user_id"] == me
     d["shared"] = bool(d["shared"])
     return d
@@ -3187,6 +3160,8 @@ def api_pl_delete(pid: int, req: Request):
     db.execute("DELETE FROM user_playlist_tracks WHERE playlist_id=?", (pid,))
     db.execute("DELETE FROM user_playlists WHERE id=?", (pid,))
     db.commit(); db.close()
+    for suffix in (".jpg", ".src.jpg"):
+        (COVERS_DIR / f"u{pid}{suffix}").unlink(missing_ok=True)
     return {"status": "ok"}
 
 @api.post("/api/me/playlists/{pid}/tracks")
@@ -3771,6 +3746,397 @@ def _admin_cli(args: list) -> int:
         return 0 if cmd == "help" else 1
     finally:
         db.close()
+
+# ── Christmas category ────────────────────────────────────────────────────────
+_XMAS = re.compile(r"\b(christmas|xmas|x-mas|holiday|holidays|navidad|no[eë]l|weihnacht\w*|jul|juletid|natale|kerst\w*|joulu\w*)\b", re.I)
+_XMAS_COLORS = {"classics": ["#c8102e", "#ffd166", "#1b7a43", "#7a0c1d"],
+                "cozy":     ["#ff8f3a", "#ffd9a8", "#c2410c", "#5a2a12"],
+                "party":    ["#ff2d55", "#1b9a52", "#ffd60a", "#8a0f2a"]}
+
+def _christmas_ids(db) -> list:
+    """Songs whose genre, folder playlist or album says Christmas (in a few languages)."""
+    out = []
+    for r in db.execute("SELECT id,genre,playlist,album FROM tracks"):
+        if any(v and _XMAS.search(str(v)) for v in (r["genre"], r["playlist"], r["album"])):
+            out.append(r["id"])
+    return out
+
+@api.get("/api/christmas/info")
+def api_christmas_info():
+    db = get_db(); n = len(_christmas_ids(db)); db.close()
+    return {"count": n}
+
+@api.get("/api/christmas")
+def api_christmas(req: Request):
+    import random as _r
+    db = get_db()
+    ids = _christmas_ids(db)
+    if not ids:
+        db.close(); raise HTTPException(404, "No Christmas music on this server yet")
+    folders = []
+    for (name,) in db.execute("SELECT DISTINCT playlist FROM tracks WHERE playlist IS NOT NULL").fetchall():
+        if _XMAS.search(name):
+            covers = [c[0] for c in db.execute("""SELECT cover_id FROM tracks WHERE playlist=? AND cover_id IS NOT NULL
+                                                  GROUP BY cover_id ORDER BY COUNT(*) DESC LIMIT 4""", (name,))]
+            cnt = db.execute("SELECT COUNT(*) FROM tracks WHERE playlist=?", (name,)).fetchone()[0]
+            folders.append({"name": name, "display_name": state["playlist_names"].get(name, name), "track_count": cnt,
+                            "covers": covers, "has_cover": (COVERS_DIR / f"{_safe_name(name)}.jpg").exists()})
+    years = {r[0]: r[1] for r in db.execute(f"SELECT id,year FROM tracks WHERE id IN ({','.join('?' * len(ids))})", ids)}
+    db.close()
+    page = _collection_page("christmas", "Christmas", ids)
+    rng = _r.Random(f"xmas:{_dt.date.today().isoformat()}")
+    db = get_db()
+    tr = {t["id"]: t for t in _tracks_by_ids(db, ids)}
+    db.close()
+    def mix(pid, title, sub, order, colors):
+        tracks = [tr[i] for i in order if i in tr][:40]
+        return {"id": pid, "title": title, "sub": sub, "colors": colors, "artists": _artist_line(tracks), "tracks": tracks} if len(tracks) >= 3 else None
+    oldest = sorted(ids, key=lambda i: (years.get(i) or 9999, rng.random()))
+    cozy = ids[:]; rng.shuffle(cozy)
+    special = [m for m in (
+        mix("x-classics", "Christmas Classics", "The oldest favourites first", oldest, _XMAS_COLORS["classics"]),
+        mix("x-cozy", "Cozy Christmas", "Lights down, something warm to drink", cozy, _XMAS_COLORS["cozy"]),
+        mix("x-party", "Christmas Party", "The ones everyone sings along to", [t["id"] for t in page["top"]] + cozy, _XMAS_COLORS["party"]),
+    ) if m]
+    for m in page["playlists"]:
+        m["title"] = {"New in Christmas": "New Christmas Music"}.get(m["title"], m["title"])
+    page["playlists"] = special + page["playlists"]
+    page["folders"] = folders
+    # Feature cards: Holiday station (when on), a special playlist, folder playlists, song of the season
+    hero = []
+    station = next((s for s in _live_stations() if s.get("template") == "holiday" and s.get("state") != "stopped"), None)
+    if station:
+        hero.append({"type": "station", "eyebrow": "Live radio", "station": station})
+    if page["playlists"]:
+        hero.append({"type": "mix", "eyebrow": "Christmas playlist", "mix": page["playlists"][0]})
+    for f in folders[:2]:
+        hero.append({"type": "folder", "eyebrow": "Playlist", "folder": f})
+    if page["top"]:
+        hero.append({"type": "song", "eyebrow": "Song of the season", "song": page["top"][0]})
+    hero += [h for h in page["hero"] if h["type"] in ("album", "artist")][:2]
+    page["hero"] = hero
+    page["season"] = _dt.date.today().month == 12 or (_dt.date.today().month == 11 and _dt.date.today().day >= 15) or \
+        (_dt.date.today().month == 1 and _dt.date.today().day <= 6)
+    return page
+
+# ── Playlist cover designer (folder playlists + your own playlists) ───────────
+_COVER_FONTS = {
+    "bold":  ["arialbd.ttf", "Arial Bold.ttf", "DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/System/Library/Fonts/Helvetica.ttc"],
+    "black": ["ariblk.ttf", "Arial Black.ttf", "arialbd.ttf", "DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"],
+    "serif": ["georgiab.ttf", "Georgia Bold.ttf", "DejaVuSerif-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf", "arialbd.ttf"],
+    "light": ["arial.ttf", "Arial.ttf", "DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"],
+}
+COVER_DEFAULTS = {"bg": "image", "c1": "#e5282a", "c2": "#7a1fa2", "overlay": "fade", "strength": 60,
+                  "title": "", "subtitle": "", "pos": "center", "align": "center", "size": "m",
+                  "font": "bold", "color": "#ffffff", "upper": True}
+_MAX_COVER_UPLOAD = 6_000_000
+
+def _clean_cover_opts(raw) -> dict:
+    o = dict(COVER_DEFAULTS)
+    raw = raw if isinstance(raw, dict) else {}
+    pick = lambda k, allowed: raw.get(k) if raw.get(k) in allowed else o[k]
+    o["bg"] = pick("bg", ("image", "gradient", "mesh", "solid"))
+    o["overlay"] = pick("overlay", ("none", "fade", "darken", "tint"))
+    o["pos"] = pick("pos", ("top", "center", "bottom"))
+    o["align"] = pick("align", ("left", "center"))
+    o["size"] = pick("size", ("s", "m", "l"))
+    f = raw.get("font")
+    o["font"] = f if (f in _COVER_FONTS or (isinstance(f, str) and re.fullmatch(r"sys:[0-9a-f]{12}", f))) else o["font"]
+    for k in ("c1", "c2", "color"):
+        o[k] = _clean_color(raw.get(k)) or o[k]
+    try:
+        o["strength"] = max(0, min(100, int(raw.get("strength", o["strength"]))))
+    except (TypeError, ValueError):
+        pass
+    o["title"] = str(raw.get("title") or "")[:60]
+    o["subtitle"] = str(raw.get("subtitle") or "")[:80]
+    o["upper"] = bool(raw.get("upper", True))
+    return o
+
+def _decode_upload(data_url) -> Optional[bytes]:
+    if not data_url:
+        return None
+    m = re.match(r"^data:image/(jpeg|png|webp);base64,(.+)$", str(data_url), re.S)
+    if not m:
+        raise HTTPException(400, "Upload a JPEG, PNG or WebP image")
+    raw = base64.b64decode(m.group(2), validate=False)
+    if len(raw) > _MAX_COVER_UPLOAD:
+        raise HTTPException(400, "That image is too large (max 6 MB)")
+    return raw
+
+def _hex_rgb(h: str):
+    h = h.lstrip("#"); return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+def render_cover(opts: dict, label: str, image: Optional[bytes] = None, S: int = 600) -> bytes:
+    from PIL import ImageOps, ImageFilter
+    o = _clean_cover_opts(opts)
+    c1, c2 = _hex_rgb(o["c1"]), _hex_rgb(o["c2"])
+    bg = o["bg"] if (o["bg"] != "image" or image) else "gradient"
+    if bg == "image":
+        base = ImageOps.fit(Image.open(io.BytesIO(image)).convert("RGB"), (S, S), Image.LANCZOS)
+    elif bg == "solid":
+        base = Image.new("RGB", (S, S), c1)
+    else:
+        base = Image.new("RGB", (S, S)); d = ImageDraw.Draw(base)
+        for i in range(S * 2):                                   # diagonal gradient
+            t = i / (S * 2 - 1)
+            col = tuple(int(c1[k] + (c2[k] - c1[k]) * t) for k in range(3))
+            d.line([(i, 0), (0, i)], fill=col, width=2)
+        if bg == "mesh":
+            import random as _r
+            rng = _r.Random(o["c1"] + o["c2"] + label)
+            for _ in range(6):
+                r = rng.randint(140, 300); x, y = rng.randint(0, S), rng.randint(0, S)
+                mix = rng.random(); tone = rng.choice([(255, 255, 255), c1, c2])
+                col = tuple(int(tone[k] * mix + (c1[k] + c2[k]) / 2 * (1 - mix)) for k in range(3))
+                d.ellipse([x - r, y - r, x + r, y + r], fill=col)
+            base = base.filter(ImageFilter.GaussianBlur(60))
+    base = base.convert("RGBA")
+    a = o["strength"] / 100
+    if o["overlay"] == "fade":
+        ov = Image.new("RGBA", (S, S)); od = ImageDraw.Draw(ov)
+        for y in range(S):
+            t = y / S if o["pos"] != "top" else 1 - y / S
+            od.line([(0, y), (S, y)], fill=(0, 0, 0, int(255 * a * (0.15 + 0.85 * t ** 1.4))))
+        base = Image.alpha_composite(base, ov)
+    elif o["overlay"] == "darken":
+        base = Image.alpha_composite(base, Image.new("RGBA", (S, S), (0, 0, 0, int(220 * a))))
+    elif o["overlay"] == "tint":
+        duo = ImageOps.colorize(ImageOps.grayscale(base.convert("RGB")), black=tuple(int(v * .25) for v in c1), white=c2).convert("RGBA")
+        base = Image.blend(base, duo, min(1.0, 0.25 + a * 0.75))
+    title = (o["title"] or label or "").strip()
+    sub = o["subtitle"].strip()
+    if o["upper"]:
+        title, sub = title.upper(), sub.upper()
+    draw = ImageDraw.Draw(base)
+    fonts = _COVER_FONTS.get(o["font"], _COVER_FONTS["bold"])
+    def font(sz):
+        if o["font"].startswith("sys:"):                 # a font installed on this computer
+            sf = _sys_font(o["font"], sz)
+            if sf:
+                return sf
+        for f in fonts:
+            try: return ImageFont.truetype(f, sz)
+            except Exception: pass
+        return ImageFont.load_default()
+    margin = int(S * 0.08)
+    max_w = S - 2 * margin
+    start = {"s": 0.075, "m": 0.11, "l": 0.16}[o["size"]] * S
+    # Wrap the title onto up to 3 lines, shrinking until it fits
+    size = int(start)
+    while True:
+        f = font(size)
+        words, lines, cur = title.split(), [], ""
+        for w in words:
+            test = (cur + " " + w).strip()
+            if draw.textlength(test, font=f) <= max_w or not cur:
+                cur = test
+            else:
+                lines.append(cur); cur = w
+        if cur:
+            lines.append(cur)
+        if (len(lines) <= 3 and all(draw.textlength(l, font=f) <= max_w for l in lines)) or size <= 18:
+            break
+        size -= 3
+    fs = font(max(14, int(size * 0.36)))
+    lh = int(size * 1.05)
+    block_h = lh * len(lines) + (int(size * 0.36 * 1.6) if sub else 0)
+    y0 = {"top": margin, "bottom": S - margin - block_h, "center": (S - block_h) // 2}[o["pos"]]
+    color = _hex_rgb(o["color"]) + (255,)
+    shadow = (0, 0, 0, 120) if sum(color[:3]) > 380 else (255, 255, 255, 90)
+    for i, line in enumerate(lines):
+        w = draw.textlength(line, font=f)
+        x = margin if o["align"] == "left" else (S - w) / 2
+        y = y0 + i * lh
+        draw.text((x + 2, y + 3), line, font=f, fill=shadow)
+        draw.text((x, y), line, font=f, fill=color)
+    if sub:
+        w = draw.textlength(sub, font=fs)
+        x = margin if o["align"] == "left" else (S - w) / 2
+        draw.text((x, y0 + lh * len(lines) + int(size * 0.12)), sub, font=fs, fill=color[:3] + (215,))
+    out = io.BytesIO(); base.convert("RGB").save(out, "JPEG", quality=90)
+    return out.getvalue()
+
+def _fetch_cover_url(url: str) -> bytes:
+    if not str(url).lower().startswith(("http://", "https://")):
+        raise HTTPException(400, "Image URL must start with http:// or https://")
+    try:
+        req2 = urllib.request.Request(url, headers={"User-Agent": "leon.music/1.0"})
+        with urllib.request.urlopen(req2, timeout=10) as r:
+            data = r.read(_MAX_COVER_UPLOAD + 1)
+    except Exception as e:
+        raise HTTPException(400, f"Could not download image: {e}")
+    if len(data) > _MAX_COVER_UPLOAD:
+        raise HTTPException(400, "That image is too large (max 6 MB)")
+    return data
+
+def _cover_source(body: dict, req: Request, saved_src: Optional[Path]) -> Optional[bytes]:
+    """New upload > URL (admins only, the server downloads it) > previously saved photo."""
+    up = _decode_upload(body.get("image"))
+    if up:
+        return up
+    if body.get("image_url"):
+        _require_admin(req)
+        return _fetch_cover_url(body["image_url"])
+    if saved_src and saved_src.exists():
+        return saved_src.read_bytes()
+    return None
+
+def _ensure_upl_cover_col():
+    db = get_db()
+    cols = {r[1] for r in db.execute("PRAGMA table_info(user_playlists)")}
+    if cols and "cover_opts" not in cols:
+        db.execute("ALTER TABLE user_playlists ADD COLUMN cover_opts TEXT"); db.commit()
+    db.close()
+
+_ensure_upl_cover_col()
+
+@api.post("/api/covers/preview")
+async def api_cover_preview(req: Request):
+    """Live preview for the cover designer (nothing is saved)."""
+    if not (_is_admin(req) or _session_user(req) or not _lib_locked()):
+        raise HTTPException(401)
+    body = await req.json()
+    saved = None
+    if body.get("folder"):
+        saved = COVERS_DIR / f"{_safe_name(body['folder'])}.src.jpg"
+    elif str(body.get("playlist_id", "")).isdigit():
+        pid = int(body["playlist_id"])
+        db = get_db(); _get_pl(db, pid, _me_id(req), write=True); db.close()   # only your own saved photo
+        saved = COVERS_DIR / f"u{pid}.src.jpg"
+    img = await run_in_threadpool(_cover_source, body, req, saved)
+    jpg = await run_in_threadpool(render_cover, body.get("opts") or {}, str(body.get("label") or ""), img, 360)
+    return Response(content=jpg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+def _save_cover(stem: str, opts: dict, label: str, img: Optional[bytes]) -> bytes:
+    jpg = render_cover(opts, label, img)
+    (COVERS_DIR / f"{stem}.jpg").write_bytes(jpg)
+    src = COVERS_DIR / f"{stem}.src.jpg"
+    if img:
+        try:
+            im = Image.open(io.BytesIO(img)).convert("RGB"); im.thumbnail((1200, 1200))
+            b = io.BytesIO(); im.save(b, "JPEG", quality=88); src.write_bytes(b.getvalue())
+        except Exception:
+            pass
+    return jpg
+
+# Folder playlist covers: the old endpoint now takes design options too (old {"image_url"} calls still work)
+@api.get("/api/playlist/{name}/cover-design")
+def api_folder_cover_design(name: str, req: Request):
+    _require_admin(req)
+    return {"opts": (load_config().get("cover_designs") or {}).get(name) or None,
+            "has_photo": (COVERS_DIR / f"{_safe_name(name)}.src.jpg").exists(),
+            "has_cover": (COVERS_DIR / f"{_safe_name(name)}.jpg").exists(),
+            "label": state["playlist_names"].get(name, name)}
+
+@api.delete("/api/playlist/{name}/cover")
+def api_folder_cover_remove(name: str, req: Request):
+    _require_admin(req)
+    for suffix in (".jpg", ".src.jpg"):
+        (COVERS_DIR / f"{_safe_name(name)}{suffix}").unlink(missing_ok=True)
+    c = load_config(); (c.get("cover_designs") or {}).pop(name, None); save_config(c)
+    return {"status": "ok"}
+
+# ── Your own playlists ──
+@api.get("/api/me/playlists/{pid}/cover")
+def api_upl_cover(pid: int, req: Request):
+    me = _me_id(req)
+    db = get_db(); _get_pl(db, pid, me); db.close()
+    p = COVERS_DIR / f"u{pid}.jpg"
+    if not p.exists():
+        raise HTTPException(404)
+    return Response(content=p.read_bytes(), media_type="image/jpeg", headers={"Cache-Control": "no-cache"})
+
+@api.get("/api/me/playlists/{pid}/cover-design")
+def api_upl_cover_design(pid: int, req: Request):
+    me = _me_id(req)
+    db = get_db(); r = _get_pl(db, pid, me, write=True); db.close()
+    return {"opts": json.loads(r["cover_opts"]) if r["cover_opts"] else None,
+            "has_photo": (COVERS_DIR / f"u{pid}.src.jpg").exists(),
+            "has_cover": (COVERS_DIR / f"u{pid}.jpg").exists(), "label": r["name"]}
+
+@api.post("/api/me/playlists/{pid}/cover")
+async def api_upl_cover_save(pid: int, req: Request):
+    me = _me_id(req)
+    body = await req.json()
+    if body.get("image_url"):
+        raise HTTPException(400, "Upload the image instead")      # only admins may make the server fetch URLs
+    db = get_db(); r = _get_pl(db, pid, me, write=True); db.close()
+    opts = _clean_cover_opts(body.get("opts"))
+    img = await run_in_threadpool(_cover_source, body, req, COVERS_DIR / f"u{pid}.src.jpg")
+    await run_in_threadpool(_save_cover, f"u{pid}", opts, r["name"], img)
+    db = get_db()
+    db.execute("UPDATE user_playlists SET cover_opts=?, updated=? WHERE id=?", (json.dumps(opts), _now(), pid))
+    db.commit(); db.close()
+    return {"status": "ok"}
+
+@api.delete("/api/me/playlists/{pid}/cover")
+def api_upl_cover_remove(pid: int, req: Request):
+    me = _me_id(req)
+    db = get_db(); _get_pl(db, pid, me, write=True)
+    db.execute("UPDATE user_playlists SET cover_opts=NULL, updated=? WHERE id=?", (_now(), pid)); db.commit(); db.close()
+    for suffix in (".jpg", ".src.jpg"):
+        (COVERS_DIR / f"u{pid}{suffix}").unlink(missing_ok=True)
+    return {"status": "ok"}
+
+# ── System fonts for the cover designer ───────────────────────────────────────
+_SYS_FONTS = {"t": 0.0, "list": [], "path": {}}
+_SYS_FONTS_LOCK = threading.Lock()
+
+def _font_dirs() -> list:
+    home = Path.home()
+    if sys.platform == "win32":
+        return [Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts",
+                Path(os.environ.get("LOCALAPPDATA", home / "AppData" / "Local")) / "Microsoft" / "Windows" / "Fonts"]
+    if sys.platform == "darwin":
+        return [Path("/System/Library/Fonts"), Path("/Library/Fonts"), home / "Library" / "Fonts"]
+    return [Path("/usr/share/fonts"), Path("/usr/local/share/fonts"), home / ".fonts", home / ".local/share/fonts"]
+
+def system_fonts() -> list:
+    """Installed fonts as [{id, family, style}]; scanned once and cached for 10 minutes."""
+    with _SYS_FONTS_LOCK:
+        if _SYS_FONTS["list"] and _now() - _SYS_FONTS["t"] < 600:
+            return _SYS_FONTS["list"]
+        seen, out, paths = set(), [], {}
+        for d in _font_dirs():
+            if not d.exists():
+                continue
+            for f in d.rglob("*"):
+                if f.suffix.lower() not in (".ttf", ".otf", ".ttc"):
+                    continue
+                for idx in range(4 if f.suffix.lower() == ".ttc" else 1):     # collections hold several faces
+                    try:
+                        fam, style = ImageFont.truetype(str(f), 20, index=idx).getname()
+                    except Exception:
+                        break
+                    fam, style = (fam or f.stem).strip(), (style or "Regular").strip()
+                    key = (fam.lower(), style.lower())
+                    if key in seen or fam.startswith("."):
+                        continue
+                    seen.add(key)
+                    fid = hashlib.sha1(f"{f}|{idx}".encode()).hexdigest()[:12]
+                    paths[fid] = (str(f), idx)
+                    out.append({"id": "sys:" + fid, "family": fam, "style": style})
+        out.sort(key=lambda x: (x["family"].lower(), x["style"] != "Regular", x["style"].lower()))
+        _SYS_FONTS.update(t=_now(), list=out, path=paths)
+        return out
+
+def _sys_font(font_id: str, size: int):
+    if not _SYS_FONTS["path"]:
+        system_fonts()
+    hit = _SYS_FONTS["path"].get(font_id[4:])
+    if not hit:
+        return None
+    try:
+        return ImageFont.truetype(hit[0], size, index=hit[1])
+    except Exception:
+        return None
+
+@api.get("/api/covers/fonts")
+def api_cover_fonts(req: Request):
+    if not (_is_admin(req) or _session_user(req) or not _lib_locked()):
+        raise HTTPException(401)
+    return {"fonts": system_fonts()}
 
 # ── Admin page ────────────────────────────────────────────────────────────────
 ADMIN_HTML = """<!doctype html>
@@ -4443,10 +4809,18 @@ _server_started = threading.Event()
 
 def _run_server():
     config = _uvicorn.Config(api, host="127.0.0.1", port=PORT,
-                              log_level="warning", loop="asyncio")
+                              log_level="warning", loop="none")
     server = _uvicorn.Server(config)
     _server_started.set()
-    server.run()
+    # On Windows the default "Proactor" event loop prints a harmless
+    # ConnectionResetError (WinError 10054) every time a browser drops a connection,
+    # e.g. when you skip or seek a song. The selector loop handles that quietly.
+    loop = asyncio.SelectorEventLoop() if sys.platform == "win32" else asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(server.serve())
+    finally:
+        loop.close()
 
 # ── Tray ──────────────────────────────────────────────────────────────────────
 _tray_icon: Optional[object] = None

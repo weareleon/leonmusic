@@ -884,6 +884,54 @@ textarea.setup-input{resize:vertical;font-family:inherit;margin-bottom:12px}
 .wz-explicit{display:flex;align-items:flex-start;gap:12px;font-size:13px;font-weight:600;cursor:pointer}
 .wz-explicit input{accent-color:var(--accent);width:17px;height:17px;margin-top:1px}
 .wz-explicit small{display:block;font-weight:500;color:var(--fg2);font-size:12px;margin-top:2px}
+.cat.xmas{background:radial-gradient(60% 90% at 85% 10%,#2fa35e 0%,transparent 60%),linear-gradient(135deg,#b3001b,#7a0c1d 55%,#145c33)}
+.cat.xmas::after{content:'';position:absolute;inset:0;pointer-events:none;
+  background-image:radial-gradient(circle,#fff 0 1.6px,transparent 2.4px),radial-gradient(circle,#fff 0 1.1px,transparent 1.8px);
+  background-size:38px 38px,23px 23px;background-position:0 0,11px 17px;opacity:.55}
+.cat.xmas span.xmas-tree{position:absolute;left:auto;bottom:auto;right:16px;top:50%;transform:translateY(-50%);font-size:58px;text-shadow:none;filter:drop-shadow(0 6px 14px rgba(0,0,0,.35))}
+.gn-h .xmas-t{display:inline-block;background:linear-gradient(90deg,#ff4d4f,#ffd166 50%,#2fa35e);-webkit-background-clip:text;background-clip:text;color:transparent}
+/* ── Cover designer ── */
+.cd .cd-card{max-width:860px;width:100%;max-height:calc(100vh - 40px);overflow:auto}
+.cd-grid{display:grid;grid-template-columns:300px 1fr;gap:24px;margin-top:14px}
+.cd-prev{position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden;background:var(--bg3);box-shadow:0 14px 40px rgba(0,0,0,.4)}
+.cd-prev img{width:100%;height:100%;object-fit:cover;display:block}
+.cd-spin{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.25)}.cd-spin.on{display:flex}
+.cd-spin .spinner{margin:0}
+.cd-sw{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-top:12px}
+.cd-sw button{aspect-ratio:1;border-radius:50%;border:2px solid var(--border);cursor:pointer}
+.cd-sw button:hover{transform:scale(1.1)}
+.cd-ctl{display:flex;flex-direction:column;gap:8px;min-width:0}
+.cd-ctl .wz-in{padding:9px 11px;font-size:13px}
+.cd-lbl{font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--fg3);margin-top:6px}
+.cd-seg{display:flex;background:var(--bg3);border-radius:9px;padding:3px;gap:2px}
+.cd-seg button{flex:1;background:none;border:none;color:var(--fg2);font:600 12px 'Montserrat',sans-serif;padding:7px 6px;border-radius:7px;cursor:pointer}
+.cd-seg button.on{background:var(--bg4);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.cd-photo{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.cd-photo .wz-in{flex-basis:100%}
+.cd-note{font-size:11.5px;color:var(--fg3);max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cd-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.cd-row label{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:600;color:var(--fg2)}
+.cd-row label span{display:flex;gap:6px}
+.cd-row input[type=color]{width:34px;height:28px;border:none;padding:0;background:none;cursor:pointer}
+.cd-row input[type=range]{width:180px;accent-color:var(--accent)}
+.cd-chk input{accent-color:var(--accent)}
+.upl-cover.img img{width:100%;height:100%;object-fit:cover;display:block}
+.upl-art-edit{cursor:pointer;position:relative}
+.upl-art-edit::after{content:'🖼 Edit cover';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);color:#fff;
+  font:700 13px 'Montserrat',sans-serif;opacity:0;transition:opacity .15s}
+.upl-art-edit:hover::after{opacity:1}
+@media(max-width:720px){.cd-grid{grid-template-columns:1fr}.cd-left{max-width:260px;margin:0 auto;width:100%}}
+.cd-fonts{display:flex;flex-direction:column;gap:6px}
+.cd-fbtn{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--bg3);border:1px solid var(--border);border-radius:9px;
+  padding:8px 12px;color:var(--fg);font:600 13px 'Montserrat',sans-serif;cursor:pointer;text-align:left}
+.cd-fbtn span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cd-fbtn small{color:var(--fg3);font-size:11px;flex-shrink:0}
+.cd-fpanel{display:none;flex-direction:column;gap:6px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:8px}
+.cd-fpanel.on{display:flex}
+.cd-flist{max-height:230px;overflow:auto;display:flex;flex-direction:column}
+.cd-flist button{flex-shrink:0;background:none;border:none;color:var(--fg);text-align:left;padding:7px 8px;border-radius:7px;cursor:pointer;font-size:17px;line-height:1.25;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cd-flist button small{font:500 10.5px 'Montserrat',sans-serif;color:var(--fg3);margin-left:8px}
+.cd-flist button:hover{background:var(--bg3)}.cd-flist button.on{background:color-mix(in srgb,var(--accent) 18%,var(--bg3))}
+.cd-fempty{font-size:12px;color:var(--fg3);padding:8px}
 </style>
 </head>
 <body>
@@ -1132,7 +1180,7 @@ textarea.setup-input{resize:vertical;font-family:inherit;margin-bottom:12px}
             <div class="pl-cover-wrap" id="plCoverWrap" onclick="openCoverModal()">
               <img id="plCoverImg" src="" alt="">
               <img class="cover-logo" id="plLogo" alt="" style="display:none">
-              <div class="pl-cover-overlay admin-only">Generate cover</div>
+              <div class="pl-cover-overlay admin-only">Design cover</div>
             </div>
             <div class="pl-hd-info" style="flex:1">
               <div class="pl-hd-label">Playlist</div>
@@ -2870,7 +2918,15 @@ async function loadSearchView(){
   [['Radio','#ff1f4b','radio'],['Charts','#8a8a1a','charts'],['New','#ff9f0a','new']]
     .forEach(([l,c,v])=>g.appendChild(catTile(l,c,null,()=>showView(v))));
   if(ME&&!ME.admin)g.appendChild(catTile('Weekly Rewind',RAINBOW,null,()=>openWeekly()));
-  genres.forEach(x=>g.appendChild(catTile(x.label,catColor(x.key),x.artist?picUrl(x.artist):null,()=>openGenre(x.key))));
+  let xm={count:0};try{xm=await api('/api/christmas/info');}catch(_){}
+  if(xm.count){
+    const t=catTile('Christmas','#b3001b',null,()=>openChristmas());t.classList.add('xmas');
+    t.querySelector('.cat-glow')?.remove();t.insertAdjacentHTML('beforeend','<span class="xmas-tree" aria-hidden="true">🎄</span>');
+    const d=new Date(),inSeason=d.getMonth()===11||(d.getMonth()===10&&d.getDate()>=15)||(d.getMonth()===0&&d.getDate()<=6);
+    inSeason?g.prepend(t):g.appendChild(t);
+  }
+  genres.filter(x=>!(xm.count&&/christmas|xmas|holiday/i.test(x.label)))
+    .forEach(x=>g.appendChild(catTile(x.label,catColor(x.key),x.artist?picUrl(x.artist):null,()=>openGenre(x.key))));
   let dec=[];try{dec=await api('/api/decades');}catch(_){}
   const dg=document.getElementById('decGrid');dg.innerHTML='';
   document.getElementById('decSec').style.display=dec.length?'':'none';
@@ -2884,7 +2940,7 @@ async function openGenre(key,path){
   body.innerHTML='<div class="loading"><div class="spinner"></div></div>';
   let d;try{d=await api(path||`/api/genres/${encodeURIComponent(key)}`);}catch(_){body.innerHTML='<div class="empty">Could not load this genre.</div>';return;}
   document.getElementById('pageTitle').textContent=d.label;
-  body.innerHTML=`<h1 class="gn-h">${esc(d.label)}</h1>`;
+  body.innerHTML=d.key==='christmas'?`<h1 class="gn-h"><span aria-hidden="true">🎄</span> <span class="xmas-t">${esc(d.label)}</span></h1>`:`<h1 class="gn-h">${esc(d.label)}</h1>`;
   // Feature cards (like the New page hero)
   const hero=nwRow(body,'nw-hero','calc(100% - 28%)');
   d.hero.forEach(h=>{
@@ -2897,6 +2953,17 @@ async function openGenre(key,path){
       fg:()=>{const i=document.createElement('img');i.src=picUrl(a.name);i.onerror=()=>i.replaceWith(artEl(a.cover_id,2,300));return i;},
       bg:a.cover_id?`/api/cover/${a.cover_id}`:null,seed:2,open:()=>showArtist(a,false),
       play:async()=>playQueue(await api(`/api/tracks?artist=${encodeURIComponent(a.name)}&limit=5000`),0)};}
+    else if(h.type==='station'){const s=h.station;item={eyebrow:h.eyebrow,title:s.name,sub:s.tagline||'Christmas music, all season long.',
+      cap:s.state==='live'&&s.now?`On air: ${s.now.artist||''} — ${s.now.title}`:'Tune in to the Holiday station',
+      fg:()=>{const i=document.createElement('img');i.src=s.logo;i.alt='';return i;},bg:null,seed:0,
+      open:()=>showView('radio'),play:async()=>{if(!radioStations.length)radioStations=await api('/api/radio/stations');
+        const i=radioStations.findIndex(x=>x.id===s.id);if(i>=0)playStation(i);}};}
+    else if(h.type==='folder'){const f=h.folder;item={eyebrow:h.eyebrow,title:plLabel(f.name),sub:`${f.track_count} songs`,
+      cap:'From your music folder',fg:()=>plArt(f,4),bg:f.covers[0]?`/api/cover/${f.covers[0]}`:null,seed:4,
+      open:()=>showPlaylist(f.name,f.track_count),play:async()=>playQueue(await api(`/api/tracks?playlist=${encodeURIComponent(f.name)}`),0)};}
+    else if(h.type==='song'){const t=h.song;item={eyebrow:h.eyebrow,title:t.title,sub:t.artist||'',
+      cap:'The most played Christmas song on the server',fg:()=>artEl(t.cover_id,5,300),bg:t.cover_id?`/api/cover/${t.cover_id}`:null,seed:5,
+      open:()=>playQueue(d.top,0),play:()=>playQueue(d.top,0)};}
     else{const m=h.mix;item={eyebrow:h.eyebrow,title:m.title,sub:m.sub,cap:m.artists.join(', '),
       fg:()=>mixArt(m,d.brand,{big:false}),bg:null,seed:3,open:()=>openMix(m),play:()=>playQueue(m.tracks,0)};}
     hero.appendChild(heroCard(item));
@@ -2907,6 +2974,14 @@ async function openGenre(key,path){
       const a=mixArt(m,d.brand,{big:false});a.style.cursor='pointer';w.appendChild(a);
       w.insertAdjacentHTML('beforeend',`<div class="album-name">${esc(m.title)}</div><div class="album-artist">${esc(m.sub)}</div>`);
       w.onclick=()=>openMix(m);r.appendChild(w);});
+  }
+  if(d.folders&&d.folders.length){
+    nwSection(body,'Christmas Playlists');const r=nwRow(body,'nw-shelf');
+    d.folders.forEach((f,i)=>{const c=document.createElement('div');c.className='album-card';
+      c.innerHTML=`<div class="album-art"></div><div class="album-name">${esc(plLabel(f.name))}</div><div class="album-artist">${f.track_count} songs</div>`;
+      const art=c.querySelector('.album-art');art.style.position='relative';const pa=plArt(f,i);
+      pa.style.cssText+=';position:absolute;inset:0;width:100%;height:100%;object-fit:cover';art.appendChild(pa);
+      c.onclick=()=>showPlaylist(f.name,f.track_count);r.appendChild(c);});
   }
   if(d.top.length){nwSection(body,'Top Songs');_genreQueue=d.top;renderSongGrid(nwRow(body,'nw-songs'),_genreQueue,false);}
   if(d.albums.length){nwSection(body,'Albums');renderAlbumGrid(nwRow(body,'nw-shelf'),d.albums);}
@@ -3074,6 +3149,8 @@ function likeBtn(t){
 // ── Sidebar ──
 function uplCoverEl(p,size){
   const w=document.createElement('div');w.className='upl-cover';
+  if(p.has_cover){w.classList.add('img');const i=document.createElement('img');i.alt='';i.loading='lazy';
+    i.src=`/api/me/playlists/${p.id}/cover?v=${Math.round(p.updated||0)}`;w.appendChild(i);return w;}
   if(p.covers&&p.covers.length){for(let k=0;k<4;k++)w.appendChild(artEl(p.covers[k%p.covers.length],k,size||80));}
   else{w.classList.add('empty');w.innerHTML='<span>♫</span>';}
   return w;
@@ -3161,6 +3238,9 @@ async function openUserPlaylist(id){
     ${p.mine&&p.tracks.length>1?'<div class="upl-hint">Drag songs to reorder.</div>':''}
     <div class="track-list" id="uplTracks"></div>`;
   b.querySelector('#uplArt').appendChild(uplCoverEl(p,160));
+  if(p.mine){const art=b.querySelector('#uplArt');art.classList.add('upl-art-edit');art.title='Edit cover';art.onclick=()=>editUserCover(p);
+    const cb=document.createElement('button');cb.className='btn-shuffle';cb.textContent='🖼 Cover';cb.onclick=()=>editUserCover(p);
+    b.querySelector('#uplEdit').after(cb);}
   if(p.mine)b.querySelector('#uplEdit').onclick=()=>plModal({title:'Edit playlist',name:p.name,desc:p.description,shared:p.shared,submit:'Save',
     onSave:async v=>{const r=await fetch(`/api/me/playlists/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json','X-Admin-Token':_tok()},body:JSON.stringify(v)});
       if(!r.ok)throw new Error((await r.json()).detail||'Could not save');await loadUserPlaylists();openUserPlaylist(id);},
@@ -3481,6 +3561,132 @@ function markExplicit(){
 let _eT=null;
 new MutationObserver(()=>{clearTimeout(_eT);_eT=setTimeout(markExplicit,60);})
   .observe(document.getElementById('app'),{childList:true,subtree:true});
+
+function openChristmas(){openGenre('christmas','/api/christmas');}
+
+// ═══════════════════════════════════════════════
+//  COVER DESIGNER (folder playlists + your own playlists)
+// ═══════════════════════════════════════════════
+const COVER_DEF={bg:'image',c1:'#e5282a',c2:'#7a1fa2',overlay:'fade',strength:60,title:'',subtitle:'',pos:'center',align:'center',size:'m',font:'bold',color:'#ffffff',upper:true};
+const COVER_SWATCHES=[['#e5282a','#7a1fa2'],['#ff9f0a','#ff2d55'],['#0a84ff','#30d158'],['#5b21ff','#ff5fa2'],['#111111','#e5282a'],['#1b7a43','#c8102e'],['#00c2a8','#0a3d62'],['#f5f0e6','#c9a227']];
+async function openCoverDesigner(cfg){
+  let info={opts:null,has_photo:false,has_cover:false,label:cfg.label};
+  try{info=await api(cfg.designUrl);}catch(_){}
+  const O={...COVER_DEF,...(info.opts||{})};
+  if(!info.opts&&!info.has_photo)O.bg='mesh';            // nothing to show yet: start with a nice blend
+  let upload=null,url='',seq=0,tmr=null,lastBlob=null;
+  const wrap=document.createElement('div');wrap.className='cover-modal cd';wrap.setAttribute('role','dialog');wrap.setAttribute('aria-modal','true');
+  const seg=(k,opts)=>`<div class="cd-seg" data-k="${k}">${opts.map(([v,l])=>`<button type="button" data-v="${v}" class="${O[k]===v?'on':''}">${l}</button>`).join('')}</div>`;
+  wrap.innerHTML=`<div class="cover-card cd-card">
+    <div class="cover-title">Design cover</div><div class="cover-sub">${esc(cfg.label)}</div>
+    <div class="cd-grid">
+      <div class="cd-left"><div class="cd-prev"><img id="cdImg" alt="Cover preview"><div class="cd-spin" id="cdSpin"><div class="spinner"></div></div></div>
+        <div class="cd-sw">${COVER_SWATCHES.map(([a,b],i)=>`<button type="button" data-i="${i}" style="background:linear-gradient(135deg,${a},${b})" aria-label="Color preset ${i+1}"></button>`).join('')}</div></div>
+      <div class="cd-ctl">
+        <div class="cd-lbl">Background</div>${seg('bg',[['image','Photo'],['gradient','Gradient'],['mesh','Blend'],['solid','Solid']])}
+        <div class="cd-photo" id="cdPhoto"><button type="button" class="rd-btn" id="cdUp">📷 Upload photo</button>
+          <span class="cd-note" id="cdPhNote">${info.has_photo?'Using your saved photo':'No photo yet'}</span>
+          ${cfg.allowUrl?'<input class="wz-in" id="cdUrl" placeholder="…or paste an image URL" autocomplete="off">':''}</div>
+        <div class="cd-row"><label>Colors<span><input type="color" id="cdC1" value="${O.c1}"><input type="color" id="cdC2" value="${O.c2}"></span></label></div>
+        <div class="cd-lbl">Overlay</div>${seg('overlay',[['none','None'],['fade','Fade'],['darken','Darken'],['tint','Color tint']])}
+        <div class="cd-row"><label>Strength<input type="range" id="cdStr" min="0" max="100" value="${O.strength}"></label></div>
+        <div class="cd-lbl">Text</div>
+        <input class="wz-in" id="cdTitle" maxlength="60" placeholder="${esc(cfg.label)}" value="${esc(O.title)}">
+        <input class="wz-in" id="cdSub" maxlength="80" placeholder="Subtitle (optional)" value="${esc(O.subtitle)}">
+        ${seg('pos',[['top','Top'],['center','Middle'],['bottom','Bottom']])}
+        ${seg('align',[['left','Left'],['center','Centre']])}
+        ${seg('size',[['s','S'],['m','M'],['l','L']])}
+        ${seg('font',[['bold','Bold'],['black','Heavy'],['serif','Serif'],['light','Light']])}
+        <div class="cd-fonts"><button type="button" class="cd-fbtn" id="cdFBtn"><span id="cdFName">More fonts on this computer…</span><small>▾</small></button>
+          <div class="cd-fpanel" id="cdFPanel"><input class="wz-in" id="cdFSearch" placeholder="Search fonts (e.g. Montserrat, Impact)" autocomplete="off">
+            <div class="cd-flist" id="cdFList"><div class="cd-fempty">Loading fonts…</div></div></div></div>
+        <div class="cd-row"><label>Text color<input type="color" id="cdCol" value="${O.color}"></label>
+          <label class="cd-chk"><input type="checkbox" id="cdUp2"${O.upper?' checked':''}> CAPITALS</label></div>
+      </div></div>
+    <div class="setup-error" id="cdErr"></div>
+    <div class="cover-actions">${info.has_cover?'<button type="button" class="btn-secondary" id="cdRm">Remove cover</button>':''}<span style="flex:1"></span>
+      <button type="button" class="btn-secondary" id="cdCancel">Cancel</button><button type="button" class="btn-primary" id="cdSave">Save cover</button></div></div>`;
+  document.body.appendChild(wrap);
+  const $=s=>wrap.querySelector(s),err=$('#cdErr');
+  const close=()=>{wrap.remove();};
+  const photoUI=()=>{$('#cdPhoto').style.display=O.bg==='image'?'':'none';};
+  const preview=()=>{clearTimeout(tmr);tmr=setTimeout(async()=>{
+    const my=++seq;$('#cdSpin').classList.add('on');
+    try{
+      const r=await fetch('/api/covers/preview',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_tok()},
+        body:JSON.stringify({opts:O,label:cfg.label,image:upload,image_url:upload?'':url,...cfg.previewKey})});
+      if(my!==seq)return;
+      if(!r.ok){err.textContent=(await r.json().catch(()=>({}))).detail||'Preview failed';return;}
+      err.textContent='';lastBlob=await r.blob();$('#cdImg').src=URL.createObjectURL(lastBlob);
+    }catch(_){err.textContent='Preview failed';}
+    finally{if(my===seq)$('#cdSpin').classList.remove('on');}
+  },250);};
+  wrap.querySelectorAll('.cd-seg').forEach(g=>g.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    O[g.dataset.k]=b.dataset.v;g.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));photoUI();preview();}));
+  wrap.querySelectorAll('.cd-sw button').forEach(b=>b.onclick=()=>{const [a,c]=COVER_SWATCHES[+b.dataset.i];
+    O.c1=a;O.c2=c;$('#cdC1').value=a;$('#cdC2').value=c;if(O.bg==='image'&&!upload&&!url&&!info.has_photo)O.bg='mesh';
+    wrap.querySelectorAll('.cd-seg[data-k=bg] button').forEach(x=>x.classList.toggle('on',x.dataset.v===O.bg));photoUI();preview();});
+  const bind=(id,k,fn=v=>v)=>{$(id).addEventListener('input',e=>{O[k]=fn(e.target.type==='checkbox'?e.target.checked:e.target.value);preview();});};
+  bind('#cdC1','c1');bind('#cdC2','c2');bind('#cdCol','color');bind('#cdStr','strength',v=>+v);bind('#cdTitle','title');bind('#cdSub','subtitle');bind('#cdUp2','upper');
+  $('#cdUp').onclick=()=>{const i=document.createElement('input');i.type='file';i.accept='image/jpeg,image/png,image/webp';
+    i.onchange=()=>{const f=i.files[0];if(!f)return;const img=new Image();img.onload=()=>{
+      const k=Math.min(1,1600/Math.max(img.width,img.height)),c=document.createElement('canvas');
+      c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      upload=c.toDataURL('image/jpeg',.88);URL.revokeObjectURL(img.src);$('#cdPhNote').textContent=f.name;O.bg='image';
+      wrap.querySelectorAll('.cd-seg[data-k=bg] button').forEach(x=>x.classList.toggle('on',x.dataset.v==='image'));preview();};
+      img.src=URL.createObjectURL(f);};i.click();};
+  const u=$('#cdUrl');if(u)u.addEventListener('input',()=>{url=u.value.trim();if(url){upload=null;$('#cdPhNote').textContent='Using the URL';}preview();});
+  $('#cdCancel').onclick=close;
+  wrap.addEventListener('click',e=>{if(e.target===wrap)close();});
+  wrap.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
+  const rm=$('#cdRm');if(rm)rm.onclick=async()=>{if(!confirm('Remove this cover? The automatic cover comes back.'))return;
+    await fetch(cfg.removeUrl,{method:'DELETE',headers:{'X-Admin-Token':_tok()}});close();cfg.onDone(false);};
+  $('#cdSave').onclick=async()=>{const b=$('#cdSave');b.disabled=true;b.textContent='Saving…';
+    try{const r=await fetch(cfg.saveUrl,{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_tok()},
+        body:JSON.stringify({opts:O,image:upload,image_url:upload?'':url})});
+      if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Could not save');
+      close();cfg.onDone(true);toast('Cover saved');}
+    catch(x){err.textContent=x.message;b.disabled=false;b.textContent='Save cover';}};
+  // System fonts: searchable list, each name shown in its own font (when this device has it too)
+  let fonts=null;
+  const faceCss=f=>{const st=f.style.toLowerCase();
+    const w=/black|heavy/.test(st)?900:/extra ?bold|ultra ?bold/.test(st)?800:/semi ?bold|demi/.test(st)?600:/bold/.test(st)?700:/medium/.test(st)?500:/extra ?light|ultra ?light|thin|hairline/.test(st)?200:/light/.test(st)?300:400;
+    return `font-family:'${f.family.replace(/'/g,"")}',sans-serif;font-weight:${w};font-style:${/italic|oblique/.test(st)?'italic':'normal'}`;};
+  const fontName=id=>{const f=(fonts||[]).find(x=>x.id===id);return f?`${f.family} ${f.style==='Regular'?'':f.style}`.trim():'Installed font';};
+  const markSeg=()=>wrap.querySelectorAll('.cd-seg[data-k=font] button').forEach(x=>x.classList.toggle('on',x.dataset.v===O.font));
+  const renderFonts=q=>{const L=$('#cdFList');q=(q||'').trim().toLowerCase();
+    const hits=(fonts||[]).filter(f=>!q||(f.family+' '+f.style).toLowerCase().includes(q)).slice(0,250);
+    L.innerHTML=hits.length?'':'<div class="cd-fempty">No fonts match.</div>';
+    hits.forEach(f=>{const b=document.createElement('button');b.type='button';b.className=O.font===f.id?'on':'';
+      b.innerHTML=`<span style="${faceCss(f)}">${esc(f.family)}</span><small>${esc(f.style)}</small>`;
+      b.onclick=()=>{O.font=f.id;$('#cdFName').textContent=fontName(f.id);markSeg();renderFonts($('#cdFSearch').value);preview();};
+      L.appendChild(b);});};
+  $('#cdFBtn').onclick=async()=>{const p=$('#cdFPanel');p.classList.toggle('on');
+    if(p.classList.contains('on')){if(!fonts){try{fonts=(await api('/api/covers/fonts')).fonts;}catch(_){fonts=[];}}
+      renderFonts($('#cdFSearch').value);$('#cdFSearch').focus();}};
+  $('#cdFSearch').addEventListener('input',e=>renderFonts(e.target.value));
+  wrap.querySelectorAll('.cd-seg[data-k=font] button').forEach(b=>b.addEventListener('click',()=>{$('#cdFName').textContent='More fonts on this computer…';}));
+  if(String(O.font).startsWith('sys:'))api('/api/covers/fonts').then(d=>{fonts=d.fonts;$('#cdFName').textContent=fontName(O.font);}).catch(()=>{});
+  photoUI();preview();
+}
+
+// Folder playlists: the admin "Generate cover" now opens the designer
+openCoverModal=function(){
+  if(!isAdmin||!_currentPlaylist)return;
+  const n=_currentPlaylist,enc=encodeURIComponent(n);
+  openCoverDesigner({label:plLabel(n),designUrl:`/api/playlist/${enc}/cover-design`,saveUrl:`/api/playlist/${enc}/cover`,
+    removeUrl:`/api/playlist/${enc}/cover`,allowUrl:true,previewKey:{folder:n},
+    onDone:()=>{const img=document.getElementById('plCoverImg'),w=document.getElementById('plCoverWrap');
+      w.classList.remove('has-cover');img.onload=()=>w.classList.add('has-cover');
+      img.onerror=()=>{w.classList.remove('has-cover');img.removeAttribute('src');};img.src=`/api/playlist/${enc}/cover?t=${Date.now()}`;
+      loadPlaylistNav();}});
+};
+// Your own playlists
+function editUserCover(p){
+  openCoverDesigner({label:p.name,designUrl:`/api/me/playlists/${p.id}/cover-design`,saveUrl:`/api/me/playlists/${p.id}/cover`,
+    removeUrl:`/api/me/playlists/${p.id}/cover`,allowUrl:false,previewKey:{playlist_id:p.id},
+    onDone:async()=>{await loadUserPlaylists();openUserPlaylist(p.id);}});
+}
 
 // ═══════════════════════════════════════════════
 //  NEW
