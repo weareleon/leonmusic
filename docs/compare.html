@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>leon.music compared</title>
+<meta name="description" content="How leon.music compares with Navidrome, Jellyfin and Plex for self-hosted music streaming: features, apps, licensing, and when to pick which.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='%23e5282a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+.cmp-hero{padding:80px 0 30px;text-align:center}
+.cmp-hero h1{font-size:clamp(38px,6vw,68px);font-weight:900;letter-spacing:-2.5px;margin:6px auto 18px;max-width:900px}
+.cmp-hero p{color:var(--fg2);max-width:640px;margin:0 auto;font-size:17px}
+.cmp-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg2);margin:40px 0 14px}
+.cmp{width:100%;border-collapse:collapse;min-width:760px;font-size:14px}
+.cmp th,.cmp td{padding:13px 16px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}
+.cmp thead th{position:sticky;top:0;background:var(--bg3);font-size:15px;font-weight:800}
+.cmp thead th.us{color:#fff;background:color-mix(in srgb,var(--accent) 28%,var(--bg3))}
+.cmp tbody th{font-weight:600;color:var(--fg);width:26%}
+.cmp td{color:#cfcfd6}
+.cmp td.us{background:color-mix(in srgb,var(--accent) 7%,transparent);color:var(--fg)}
+.cmp tr.grp th{background:var(--bg);color:var(--accent2);font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;padding-top:22px}
+.y{color:var(--ok);font-weight:800}.n{color:var(--fg3)}
+.cmp small{display:block;color:var(--fg3);font-size:12px;margin-top:2px}
+.fine{color:var(--fg3);font-size:12.5px;max-width:860px}
+.picks{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:34px}
+.pick{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:22px}
+.pick h3{font-size:19px;letter-spacing:-.5px;margin-bottom:8px}
+.pick p{color:#cfcfd6;font-size:14.5px}
+.pick.us{border-color:color-mix(in srgb,var(--accent) 50%,var(--border))}
+.cmp-sec{padding:70px 0}
+.cmp-sec h2{font-size:clamp(28px,4vw,40px);font-weight:900}
+</style>
+</head>
+<body>
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="./"><i></i>leon.music</a>
+  <nav class="nav-links" id="navLinks">
+    <a href="./#features">Features</a><a href="./#radio">Live radio</a><a href="./#install">Install</a><a href="compare.html" aria-current="page">Compare</a><a href="docs.html">Docs</a>
+  </nav>
+  <a class="btn sm gh" href="https://github.com/weareleon/leonmusic">GitHub</a>
+  <a class="btn sm pri" href="https://github.com/weareleon/leonmusic/releases/latest">Download</a>
+  <button class="menu-btn" aria-label="Menu" aria-expanded="false" onclick="const n=document.getElementById('navLinks');n.classList.toggle('open');this.setAttribute('aria-expanded',n.classList.contains('open'))">☰</button>
+</div></header>
+
+<main>
+<div class="wrap">
+  <div class="cmp-hero">
+    <div class="eyebrow">Compare</div>
+    <h1>leon.music vs Navidrome, Jellyfin &amp; Plex</h1>
+    <p>All four let you stream your own music. They're built for different people, though. Here's an honest look at where each one shines.</p>
+  </div>
+
+  <div class="cmp-wrap">
+  <table class="cmp">
+    <thead><tr><th scope="col"></th><th scope="col" class="us">leon.music</th><th scope="col">Navidrome</th><th scope="col">Jellyfin</th><th scope="col">Plex</th></tr></thead>
+    <tbody>
+      <tr class="grp"><th colspan="5">The basics</th></tr>
+      <tr><th scope="row">What it's for</th><td class="us">Music</td><td>Music</td><td>Movies, TV, music, photos</td><td>Movies, TV, music, photos</td></tr>
+      <tr><th scope="row">Price</th><td class="us">Free</td><td>Free</td><td>Free</td><td>Free, some features need Plex Pass</td></tr>
+      <tr><th scope="row">Open source</th><td class="us"><span class="y">✓</span> MIT</td><td><span class="y">✓</span> GPL-3.0</td><td><span class="y">✓</span> GPL-2.0</td><td><span class="n">—</span> Closed source</td></tr>
+      <tr><th scope="row">Works without an online account</th><td class="us"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="n">—</span> Needs a Plex account</td></tr>
+      <tr><th scope="row">Setting it up</th><td class="us">Windows tray app, or one Python file on any OS</td><td>Single binary or Docker</td><td>Installers or Docker</td><td>Installers or Docker</td></tr>
+      <tr><th scope="row">Apps</th><td class="us">Web player, plus Subsonic apps</td><td>Web player plus dozens of Subsonic apps</td><td>Official apps plus third-party music apps</td><td>Plexamp and the Plex apps</td></tr>
+      <tr><th scope="row">Subsonic API</th><td class="us"><span class="y">✓</span><small>With an app password</small></td><td><span class="y">✓</span></td><td>Through a plugin</td><td><span class="n">—</span></td></tr>
+
+      <tr class="grp"><th colspan="5">Listening</th></tr>
+      <tr><th scope="row">Accounts for each listener</th><td class="us"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="y">✓</span></td></tr>
+      <tr><th scope="row">Likes and your own playlists</th><td class="us"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="y">✓</span></td></tr>
+      <tr><th scope="row">Smart playlists from rules</th><td class="us"><span class="n">—</span><small>Generated genre, decade and chart playlists instead</small></td><td><span class="y">✓</span></td><td>Through a plugin</td><td><span class="y">✓</span></td></tr>
+      <tr><th scope="row">Personal mixes from your listening</th><td class="us"><span class="y">✓</span><small>Made for You, Top Picks, Friends Mix</small></td><td><span class="n">—</span></td><td>Instant Mix</td><td><span class="y">✓</span></td></tr>
+      <tr><th scope="row">Synced lyrics</th><td class="us"><span class="y">✓</span><small>.lrc files, tags, LRCLIB</small></td><td><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="y">✓</span></td></tr>
+      <tr><th scope="row">Transcoding for slow connections</th><td class="us">In Subsonic apps<small>The web player streams your original files</small></td><td><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="y">✓</span></td></tr>
+      <tr><th scope="row">Scrobbling (Last.fm, ListenBrainz)</th><td class="us"><span class="y">✓</span></td><td><span class="y">✓</span></td><td>Through plugins</td><td>Through third-party tools</td></tr>
+
+      <tr class="grp"><th colspan="5">The streaming-service extras</th></tr>
+      <tr><th scope="row">Search categories with genre and decade pages</th><td class="us"><span class="y">✓</span></td><td>Browse by genre</td><td>Browse by genre</td><td>Browse by genre and mood</td></tr>
+      <tr><th scope="row">Charts from your server's plays</th><td class="us"><span class="y">✓</span><small>Weekly, monthly, all-time, with rank movement</small></td><td>Most played lists</td><td>Most played lists</td><td>Popular tracks (from online data)</td></tr>
+      <tr><th scope="row">Weekly and yearly Rewind</th><td class="us"><span class="y">✓</span></td><td><span class="n">—</span></td><td><span class="n">—</span></td><td>Year in review</td></tr>
+      <tr><th scope="row">Broadcast your own live radio stations</th><td class="us"><span class="y">✓</span><small>Schedules, shows, Icecast</small></td><td><span class="n">—</span><small>Plays internet radio</small></td><td><span class="n">—</span></td><td><span class="n">—</span></td></tr>
+      <tr><th scope="row">Profiles and friends</th><td class="us"><span class="y">✓</span></td><td><span class="n">—</span></td><td><span class="n">—</span></td><td>Friends through Plex accounts</td></tr>
+      <tr><th scope="row">Playlist cover designer</th><td class="us"><span class="y">✓</span></td><td><span class="n">—</span></td><td>Upload an image</td><td>Upload an image</td></tr>
+      <tr><th scope="row">Emails: password reset, digests, alerts</th><td class="us"><span class="y">✓</span></td><td><span class="n">—</span></td><td><span class="n">—</span></td><td>Account emails from Plex</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="fine">Checked in November 2026. These projects move fast and plugins add a lot, so something here may be out of date. If you spot a mistake, <a href="https://github.com/weareleon/leonmusic/issues" style="color:var(--accent2)">open an issue</a> and we'll fix it.</p>
+</div>
+
+<section class="cmp-sec"><div class="wrap">
+  <div class="eyebrow">Which one is for you?</div>
+  <h2>Pick the right tool</h2>
+  <div class="picks">
+    <div class="pick us"><h3>leon.music</h3><p>You want your own music to feel like a streaming service, with mixes, charts, Rewind, friends and your own radio stations, for your household or friends. It's simple to run on a Windows PC.</p></div>
+    <div class="pick"><h3>Navidrome</h3><p>You want a fast, lightweight music server that handles very large libraries, with years of polish behind it.</p></div>
+    <div class="pick"><h3>Jellyfin</h3><p>You want one free, open-source server for movies, TV and music, with a big plugin ecosystem.</p></div>
+    <div class="pick"><h3>Plex</h3><p>You want a polished, all-in-one media server with Plexamp, and you don't mind a Plex account or paying for some extras.</p></div>
+  </div>
+  <div class="note tip" style="margin-top:34px"><span>💡</span><span><b>You don't have to choose just one.</b> They all read the same music folder, so you can run leon.music next to any of them.</span></div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:28px">
+    <a class="btn pri" href="https://github.com/weareleon/leonmusic/releases/latest">Download leon.music</a>
+    <a class="btn" href="docs.html#install">Read the install guide</a>
+  </div>
+</div></section>
+</main>
+
+<footer><div class="wrap">
+  <a class="brand" href="./"><i></i>leon.music</a>
+  <span>Free and open source, MIT license. Navidrome, Jellyfin and Plex are trademarks of their owners; leon.music isn't affiliated with them.</span>
+  <nav><a href="./">Home</a><a href="docs.html">Docs</a><a href="https://github.com/weareleon/leonmusic">GitHub</a></nav>
+</div></footer>
+</body>
+</html>

@@ -941,6 +941,14 @@ textarea.setup-input{resize:vertical;font-family:inherit;margin-bottom:12px}
 .em-state.ok{background:color-mix(in srgb,#2fbf71 20%,var(--bg3));color:#2fbf71}
 .em-err{color:var(--accent2);font-size:12px;min-height:16px}
 .ua-mail{font-size:11px;color:var(--fg3);margin-left:6px}
+.cn-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin:10px 0}
+.cn-h{display:flex;align-items:center;gap:10px;font-weight:800;font-size:14px;margin-bottom:6px}
+.cn-h .em-state{margin-left:auto}
+.cn-grid{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px;margin:10px 0;align-items:center}
+.cn-grid span{color:var(--fg2);font-weight:600}
+.cn-grid code{font:600 13px 'JetBrains Mono',ui-monospace,Consolas,monospace;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:5px 8px;word-break:break-all;user-select:all}
+.cn-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.cn-row .settings-input{flex:1;min-width:200px}
 </style>
 </head>
 <body>
@@ -1218,6 +1226,10 @@ textarea.setup-input{resize:vertical;font-family:inherit;margin-bottom:12px}
         <div class="view" id="view-rewind"><div id="rewindBody"></div></div>
         <!-- SETTINGS -->
         <div class="view" id="view-settings">
+          <div class="settings-section" id="connSection" style="display:none">
+            <div class="settings-title">Apps &amp; scrobbling</div>
+            <div id="connSettings"></div>
+          </div>
           <div class="settings-section" id="emailSection" style="display:none">
             <div class="settings-title">Email</div>
             <div id="emailSettings"></div>
@@ -1624,7 +1636,7 @@ function showView(name){
   if(name!=='upl')_uplCur=null;
   renderUplNav();
   if(name==='mix')loadMixView();
-  if(name==='settings'){loadUsersAdmin();loadEmailSettings();}
+  if(name==='settings'){loadUsersAdmin();loadEmailSettings();loadConnections();}
   if(name!=='new')closeSongMenu();
 }
 
@@ -1906,7 +1918,8 @@ function playQueue(q,idx){
   const artC=document.getElementById('pArt');artC.innerHTML='';
   artC.appendChild(artEl(t.cover_id,t.id%8,44));
   audio.src=`/api/stream/${t.id}`;
-  _playLogged=false;
+  _playLogged=false;_scrobDone=false;_scrobStart=Date.now()/1000;
+  if(_scrobOn)fetch(`/api/me/nowplaying/${t.id}`,{method:'POST'}).catch(()=>{});
   audio.play().catch(()=>{});
   document.getElementById('btnPlay').textContent='⏸';
   updatePlayingRows();
@@ -1935,6 +1948,11 @@ audio.addEventListener('timeupdate',()=>{
       _playLogged=true;
       fetch(`/api/plays/${t.id}`,{method:'POST'}).catch(()=>{});
     }
+  }
+  // Scrobble (Last.fm rules): songs over 30s, after half of the song or 4 minutes
+  if(_scrobOn&&!_scrobDone&&!radioMode&&audio.duration>30&&audio.currentTime>=Math.min(audio.duration/2,240)){
+    const t=queue[qIdx];_scrobDone=true;
+    if(t)fetch(`/api/me/scrobble/${t.id}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({started:_scrobStart})}).catch(()=>{});
   }
 });
 audio.addEventListener('loadedmetadata',()=>{
@@ -4233,6 +4251,56 @@ async function loadEmailSettings(){
   if(d.verified){const h=document.createElement('div');h.className='settings-desc';h.style.padding='10px 0 0';
     h.textContent='Password reset emails always work with a confirmed address. Every email has an unsubscribe link.';kb.appendChild(h);}
 }
+// ── Apps (Subsonic) and scrobbling ──
+let _scrobOn=false,_scrobDone=false,_scrobStart=0;
+async function refreshScrobFlag(){
+  if(!ME||!ME.id){_scrobOn=false;return;}
+  try{const d=await api('/api/me/connections');_scrobOn=!!(d.lastfm.user||d.listenbrainz.user);}catch(_){}
+}
+async function loadConnections(){
+  const sec=document.getElementById('connSection'),box=document.getElementById('connSettings');
+  if(!sec)return;
+  let d;try{d=await api('/api/me/connections');}catch(_){sec.style.display='none';return;}
+  sec.style.display='';
+  _scrobOn=!!(d.lastfm.user||d.listenbrainz.user);
+  const apps=`<div class="cn-card"><div class="cn-h">📱 Subsonic apps${d.app_password?'<span class="em-state ok">✓ On</span>':''}</div>
+      <div class="settings-desc">Use leon.music in apps like Symfonium, Feishin, Substreamer, Tempo or DSub: offline downloads, CarPlay and Android Auto, and more.</div>
+      ${d.app_password?`<div class="cn-grid"><span>Server</span><code>${esc(location.origin)}</code><span>Username</span><code>${esc(d.username)}</code>
+        <span>Password</span><code id="cnPw">••••••••••••</code></div>
+        <div class="cn-row"><button class="rd-btn" id="cnShow">Show</button><button class="rd-btn" id="cnCopy">Copy password</button>
+        <button class="rd-btn" id="cnNew">New password</button><button class="rd-btn" id="cnOff">Turn off</button></div>
+        <div class="settings-desc" style="margin-top:8px">This app password only works in apps, not on this website. Making a new one signs your apps out.</div>`
+      :`<div class="cn-row" style="margin-top:10px"><button class="rd-btn pri" id="cnNew">Create app password</button></div>`}</div>`;
+  let scrob='';
+  if(d.accounts){
+    const lf=d.lastfm.user?`<div class="cn-row"><span class="settings-desc">Scrobbling as <b>${esc(d.lastfm.user)}</b></span><button class="rd-btn" id="lfOff">Disconnect</button></div>`
+      :d.lastfm.available?`<div class="cn-row"><button class="rd-btn pri" id="lfOn">Connect Last.fm</button></div>`
+      :`<div class="settings-desc">Your server admin needs to add a Last.fm API key in the admin panel first.</div>`;
+    const lb=d.listenbrainz.user?`<div class="cn-row"><span class="settings-desc">Sending listens as <b>${esc(d.listenbrainz.user)}</b></span><button class="rd-btn" id="lbOff">Disconnect</button></div>`
+      :`<div class="cn-row"><input class="settings-input" id="lbTok" placeholder="Paste your user token" autocomplete="off"><button class="rd-btn pri" id="lbOn">Connect</button></div>
+        <div class="settings-desc" style="margin-top:6px">Find it at <a href="https://listenbrainz.org/settings/" target="_blank" rel="noopener" style="color:var(--accent2)">listenbrainz.org/settings</a>.</div>`;
+    scrob=`<div class="cn-card"><div class="cn-h">🎧 Last.fm${d.lastfm.user?'<span class="em-state ok">✓ Connected</span>':''}</div>${lf}</div>
+      <div class="cn-card"><div class="cn-h">🧠 ListenBrainz${d.listenbrainz.user?'<span class="em-state ok">✓ Connected</span>':''}</div>${lb}</div>
+      <div class="settings-desc" style="padding:4px 2px">Songs are scrobbled once you've heard half of them (or 4 minutes), from this player and from Subsonic apps. Only the song, artist, album and time are sent.</div>
+      <div class="em-err" id="cnErr"></div>`;
+  }
+  box.innerHTML=apps+scrob;
+  const $=s=>box.querySelector(s),err=()=>$('#cnErr')||{textContent:''};
+  const nb=$('#cnNew');if(nb)nb.onclick=async()=>{
+    if(d.app_password&&!confirm('Make a new app password? Apps using the old one will need the new one.'))return;
+    await fetch('/api/me/app-password',{method:'POST',headers:{'X-Admin-Token':_tok()}});loadConnections().then(()=>{const s=$('#cnShow');if(s)s.click();});};
+  const sb=$('#cnShow');if(sb)sb.onclick=()=>{const c=$('#cnPw'),on=sb.textContent==='Show';c.textContent=on?d.app_password:'••••••••••••';sb.textContent=on?'Hide':'Show';};
+  const cb=$('#cnCopy');if(cb)cb.onclick=async()=>{try{await navigator.clipboard.writeText(d.app_password);toast('Password copied');}catch(_){toast('Copy failed: press Show and copy it');}};
+  const ob=$('#cnOff');if(ob)ob.onclick=async()=>{if(!confirm('Turn off app access? Your apps will be signed out.'))return;
+    await fetch('/api/me/app-password',{method:'DELETE',headers:{'X-Admin-Token':_tok()}});loadConnections();};
+  const lo=$('#lfOn');if(lo)lo.onclick=async()=>{try{location.href=(await api('/api/me/lastfm/connect')).url;}catch(x){err().textContent=x.message||'Could not connect';}};
+  const lx=$('#lfOff');if(lx)lx.onclick=async()=>{await fetch('/api/me/lastfm',{method:'DELETE'});loadConnections();};
+  const bo=$('#lbOn');if(bo)bo.onclick=async()=>{bo.disabled=true;err().textContent='';
+    const r=await fetch('/api/me/listenbrainz',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:$('#lbTok').value})});
+    const x=await r.json().catch(()=>({}));bo.disabled=false;
+    if(!r.ok){err().textContent=x.detail||'Could not connect';return;}toast('ListenBrainz connected');loadConnections();};
+  const bx=$('#lbOff');if(bx)bx.onclick=async()=>{await fetch('/api/me/listenbrainz',{method:'DELETE'});loadConnections();};
+}
 function openFromEmailLink(){
   const q=new URLSearchParams(location.search);if(!q.toString())return;
   const v=q.get('view'),pl=q.get('playlist');
@@ -4261,7 +4329,8 @@ function openFromEmailLink(){
     if(me.required&&!ME&&!isAdmin&&!me.shared){showLogin(me.library_password);return;}
     if(st.tracks>0){document.getElementById('setup').style.display='none';initApp();renderUserChip();
       if(ME&&!ME.admin&&!ME.onboarded)showOnboarding();
-      else setTimeout(openFromEmailLink,300);}
+      else setTimeout(openFromEmailLink,300);
+      refreshScrobFlag();}
     // else show setup (already visible by default)
   }catch(e){/* server not responding yet, show setup */}
 })();
