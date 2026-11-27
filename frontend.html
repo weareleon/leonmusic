@@ -5293,9 +5293,12 @@ const ROUTES={showView:'',showArtist:'artist',showAlbumDetail:'album',showPlayli
   openMix:'mix',openWeekly:'weekly',openRewind:'rewind',openChart:'chart',showNewSongs:'new-songs'};
 const ROUTE_ARGS={showArtist:2,showAlbumDetail:1,showPlaylist:2,openUserPlaylist:1,openProfile:1,openGenre:2,openRadioList:1,
   openCurator:1,openDjMix:1,openMix:1,openWeekly:0,openRewind:2,openChart:1,openMixes:0,showNewSongs:0,showView:1};
-let _routeDepth=0,_routing=false,_routeReady=false;
+let _routeDepth=0,_routing=false,_routeReady=false,_shownHash=null;const _routeMem={};
+const _slug=x=>String(x||'').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60)||'playlist';
 function _routeHash(fn,args){
   const seg=ROUTES[fn];if(fn==='showView')return '#/'+(args[0]==='home'?'':args[0]);
+  if(fn==='openGenre'){const d=/\/api\/decades\/([^/?]+)/.exec(args[1]||'');return d?'#/decade/'+encodeURIComponent(d[1]):'#/genre/'+encodeURIComponent(args[0]||'');}
+  if(fn==='openMix'){const m=args[0]||{};return '#/mix/'+_slug(m.title||m.name||m.id);}   // every made-for-you / decade / genre playlist gets its own link
   const simple=args.map(a=>a&&typeof a==='object'?(a.album||a.name||a.id):a).filter(a=>a!=null&&a!==''&&typeof a!=='object').map(a=>encodeURIComponent(a===false?'':a===true?'essentials':a));
   return '#/'+seg+(simple.length?'/'+simple.join('/'):'');
 }
@@ -5310,8 +5313,8 @@ Object.keys(ROUTES).forEach(fn=>{
         const a=args.slice(0,ROUTE_ARGS[fn]),st={route:fn,args:a};
         const cur=history.state&&history.state.route;
         if(!(cur===fn&&JSON.stringify(history.state.args)===JSON.stringify(a))){
-          _saveScroll();
-          try{history.pushState(st,'',_routeHash(fn,a));}catch(e){history.pushState({route:fn,args:[]},'',_routeHash(fn,[]));}
+          _saveScroll();const h=_routeHash(fn,a);_routeMem[h]=a;_shownHash=h;
+          try{history.pushState(st,'',h);}catch(e){history.pushState({route:fn,args:[],mem:1},'',h);}
           const m=document.querySelector('.main');if(m)m.scrollTop=0;
         }
       }
@@ -5321,13 +5324,17 @@ Object.keys(ROUTES).forEach(fn=>{
 });
 async function _runRoute(st){
   _routing=true;
-  try{const f=window[st.route];if(typeof f==='function')await f(...(st.args||[]));}catch(e){}
+  const h=_routeHash(st.route,st.args||[]),args=(st.args&&st.args.length)?st.args:(_routeMem[location.hash]||_routeMem[h]||[]);
+  _shownHash=location.hash&&location.hash.length>2?location.hash:h;
+  try{const f=window[st.route];if(typeof f==='function')await f(...args);}catch(e){}
   finally{_routing=false;}
   const m=document.querySelector('.main');if(m&&st.scroll!=null)setTimeout(()=>{m.scrollTop=st.scroll;},60);
 }
 window.addEventListener('popstate',e=>{
   if(_npOpen)return;                          // Back just closed the Now Playing sheet
-  const st=e.state;if(st&&st.route)_runRoute(st);
+  const st=e.state;
+  if(st&&st.route&&_shownHash&&location.hash===_shownHash)return;   // same page (e.g. Back just closed a sheet): don't rebuild it
+  if(st&&st.route)_runRoute(st);
   else if(!st&&location.hash.length>2)_routeFromUrl(true);   // a link typed or pasted into the address bar
   else if(!st||!st.np)_runRoute({route:'showView',args:['home']});
 });
@@ -5339,6 +5346,8 @@ async function _routeFromUrl(noState){
   const parts=h.split('/').map(decodeURIComponent),seg=parts.shift();
   const fn=Object.keys(ROUTES).find(k=>ROUTES[k]===seg&&k!=='showView');
   let args=parts;
+  if(seg==='decade'){const st={route:'openGenre',args:[null,'/api/decades/'+parts[0]]};history.replaceState(st,'',location.hash);_runRoute(st);return true;}
+  if(fn==='openGenre')args=parts[0]==='christmas'?['christmas','/api/christmas']:[parts[0]];
   if(fn==='showArtist'){const all=await api('/api/artists').catch(()=>[]);const a=all.find(x=>x.name===parts[0]);if(!a)return false;args=[a,parts[1]==='essentials'];}
   if(fn==='showAlbumDetail'){const all=await api('/api/albums').catch(()=>[]);const a=all.find(x=>x.album===parts[0]);if(!a)return false;args=[a];}
   const st=fn?{route:fn,args}:{route:'showView',args:[seg]};
