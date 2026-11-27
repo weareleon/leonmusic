@@ -2768,7 +2768,8 @@ def api_me_home(req: Request):
     pool = [r for r in allrows if not keys or gkey[r["id"]] in keys]
     gplays = {r[0]: r[1] for r in db.execute("SELECT track_id, COUNT(*) FROM plays GROUP BY track_id")}
     mine = [(r[0], r[1]) for r in db.execute(
-        "SELECT track_id, COUNT(*) n FROM plays WHERE user_id=? GROUP BY track_id ORDER BY n DESC", (u["id"],))]
+        "SELECT track_id, COUNT(*) n FROM plays WHERE user_id=? AND track_id NOT IN (SELECT id FROM tracks WHERE mix_id IS NOT NULL) "
+        "GROUP BY track_id ORDER BY n DESC", (u["id"],))]
     my_total = sum(n for _, n in mine)
 
     def mk(key, title, ids, sub=""):
@@ -2965,7 +2966,7 @@ def _user_plays(db, uid: int, start: float, end: float) -> list:
         """SELECT p.track_id, p.played_at, t.title, t.artist, t.album, t.duration, t.cover_id, t.genre,
                   COALESCE(t.album_artist,t.artist) AS main_artist
            FROM plays p JOIN tracks t ON t.id=p.track_id
-           WHERE p.user_id=? AND p.played_at>=? AND p.played_at<?""", (uid, start, end)).fetchall()]
+           WHERE p.user_id=? AND p.played_at>=? AND p.played_at<? AND t.mix_id IS NULL""", (uid, start, end)).fetchall()]   # DJ-mix plays don't count
 
 def _rewind_stats(rows: list, top_n: int = 50) -> dict:
     songs: dict = {}; artists: dict = {}; albums: dict = {}; genres: dict = {}
@@ -3002,7 +3003,7 @@ def api_me_rewind(req: Request, year: Optional[int] = None, month: Optional[int]
     year = year or today.year
     db = get_db()
     yrs = [int(r[0]) for r in db.execute(
-        "SELECT DISTINCT strftime('%Y', played_at, 'unixepoch', 'localtime') FROM plays WHERE user_id=? ORDER BY 1 DESC",
+        "SELECT DISTINCT strftime('%Y', played_at, 'unixepoch', 'localtime') FROM plays WHERE user_id=? AND track_id NOT IN (SELECT id FROM tracks WHERE mix_id IS NOT NULL) ORDER BY 1 DESC",
         (u["id"],)) if r[0]]
     ystart = _dt.datetime(year, 1, 1).timestamp(); yend = _dt.datetime(year + 1, 1, 1).timestamp()
     year_rows = _user_plays(db, u["id"], ystart, yend)
@@ -3026,7 +3027,7 @@ def api_me_rewind_week(req: Request):
     prev = _user_plays(db, u["id"], w0 - 7 * 86400, w0)
     seen_before = {r[0] for r in db.execute(
         """SELECT DISTINCT COALESCE(t.album_artist,t.artist) FROM plays p JOIN tracks t ON t.id=p.track_id
-           WHERE p.user_id=? AND p.played_at<?""", (u["id"], w0))}
+           WHERE p.user_id=? AND p.played_at<? AND t.mix_id IS NULL""", (u["id"], w0))}
     db.close()
     st = _rewind_stats(rows, 10)
     pv = _rewind_stats(prev, 1)
@@ -3047,7 +3048,7 @@ def api_me_rewind_playlists(req: Request):
     db = get_db()
     out = []
     for (y,) in db.execute("""SELECT DISTINCT strftime('%Y', played_at, 'unixepoch', 'localtime') FROM plays
-                              WHERE user_id=? ORDER BY 1 DESC""", (u["id"],)).fetchall():
+                              WHERE user_id=? AND track_id NOT IN (SELECT id FROM tracks WHERE mix_id IS NOT NULL) ORDER BY 1 DESC""", (u["id"],)).fetchall():
         y = int(y)
         rows = _user_plays(db, u["id"], _dt.datetime(y, 1, 1).timestamp(), _dt.datetime(y + 1, 1, 1).timestamp())
         st = _rewind_stats(rows, 50)
@@ -3683,7 +3684,8 @@ def _friends_mix(db, uid: int, mk):
             continue
         name = f["display_name"] or f["username"]
         got = False
-        for (tid,) in db.execute("SELECT track_id FROM plays WHERE user_id=? AND played_at>? ORDER BY played_at DESC LIMIT 400",
+        for (tid,) in db.execute("SELECT track_id FROM plays WHERE user_id=? AND played_at>? AND track_id NOT IN "
+                                 "(SELECT id FROM tracks WHERE mix_id IS NOT NULL) ORDER BY played_at DESC LIMIT 400",
                                  (fid, _now() - 21 * 86400)):
             counts[tid] = counts.get(tid, 0) + 1
             who.setdefault(tid, set()).add(name); got = True
@@ -4524,6 +4526,20 @@ input[type=checkbox]{width:auto}
   </div>
 
   <div class="card">
+    <div class="card-title">Send emails now</div>
+    <div style="font-size:12.5px;color:var(--fg2);line-height:1.5">Send without waiting for the weekly schedule. Only people who turned on that email in their settings get it.</div>
+    <label>New music</label>
+    <div class="cv-empty" id="snNew" style="margin:4px 0 8px">Loading…</div>
+    <button class="btn btn-secondary" id="snNewBtn" onclick="sendNow('new_music')">Send new music email now</button>
+    <label style="margin-top:18px">Announcement</label>
+    <div class="cv-empty" id="snNews" style="margin:4px 0 8px"></div>
+    <input type="text" id="snSubj" placeholder="Subject, e.g. 200 new albums just landed" maxlength="150">
+    <textarea id="snMsg" rows="4" maxlength="5000" placeholder="Your message" style="width:100%;margin-top:8px;box-sizing:border-box;background:transparent;color:inherit;border:1px solid rgba(128,128,128,.35);border-radius:8px;padding:10px;font:inherit"></textarea>
+    <div class="msg" id="snMsgOut"></div>
+    <div class="row"><button class="btn btn-secondary" onclick="sendNow('news')">Send announcement</button></div>
+  </div>
+
+  <div class="card">
     <div class="card-title">Security</div>
     <label>New admin password (min. 8 characters)</label>
     <input type="password" id="newPw" placeholder="Leave blank to keep current">
@@ -4577,7 +4593,7 @@ async function showAdmin(){
   loadForcedUI(d);
   loadStations();
   loadYearScan();
-  loadEmailUI();
+  loadEmailUI();loadSendNow();
   loadLastfmUI();
   loadHubs();
   loadAppearanceUI();
@@ -4839,7 +4855,7 @@ async function saveEmail(quiet){
   if(!r.ok){const e=await r.json().catch(()=>({}));m.className='msg err';m.textContent=e.detail||'Failed to save.';return false;}
   document.getElementById('emPw').value='';
   if(!quiet){m.className='msg ok';m.textContent='Saved ✓';setTimeout(()=>m.textContent='',3000);}
-  loadEmailUI();return true;
+  loadEmailUI();loadSendNow();return true;
 }
 async function testEmail(){
   const m=document.getElementById('emMsg');
@@ -4850,6 +4866,30 @@ async function testEmail(){
   const r=await fetch('/api/admin/email/test',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_token},body:JSON.stringify({to})});
   const e=await r.json().catch(()=>({}));
   m.className=r.ok?'msg ok':'msg err';m.textContent=r.ok?'Sent ✓ Check the inbox (and the spam folder).':(e.detail||'Could not send.');
+}
+
+// ── Send emails now ──
+async function loadSendNow(){
+  let d;try{d=await (await fetch('/api/admin/email/send-now',{headers:{'X-Admin-Token':_token}})).json();}catch(e){return;}
+  const ppl=n=>n+(n===1?' person gets':' people get');
+  const since=new Date(d.since*1000).toLocaleString([],{dateStyle:'medium',timeStyle:'short'});
+  document.getElementById('snNew').textContent=(d.ready?'':'Email is off, so nothing can be sent. ')+
+    (d.new_songs?d.new_songs+' new songs ('+d.new_albums+' albums) since '+since+(d.albums.length?': '+d.albums.join(', ')+(d.new_albums>d.albums.length?' and more.':'.'):'.'):'No new songs since '+since+'.')+
+    ' '+ppl(d.new_music_people)+' New music emails.';
+  document.getElementById('snNewBtn').disabled=!d.ready||!d.new_songs||!d.new_music_people;
+  document.getElementById('snNews').textContent=ppl(d.news_people)+' Announcements.';
+}
+async function sendNow(kind){
+  const m=document.getElementById('snMsgOut'),b={kind:kind};
+  if(kind==='news'){b.subject=document.getElementById('snSubj').value.trim();b.message=document.getElementById('snMsg').value.trim();
+    if(!b.subject||!b.message){m.className='msg err';m.textContent='Add a subject and a message.';return;}
+    if(!confirm('Send this announcement now?'))return;}
+  m.className='msg';m.textContent='Sending…';
+  const r=await fetch('/api/admin/email/send-now',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_token},body:JSON.stringify(b)});
+  const e=await r.json().catch(()=>({}));
+  m.className=r.ok?'msg ok':'msg err';m.textContent=r.ok?'Sending to '+e.sent+(e.sent===1?' person':' people')+' ✓':(e.detail||'Could not send.');
+  if(r.ok&&kind==='news'){document.getElementById('snSubj').value='';document.getElementById('snMsg').value='';}
+  loadSendNow();
 }
 
 // ── Artist photos ──
@@ -5161,6 +5201,7 @@ EMAIL_KINDS = {  # user-facing email types; all start off (password reset always
     "friends":  "Friend requests and playlists your friends share",
     "eoy":      "End of Year Rewind (once, in December)",
     "login":    "A new login to your account",
+    "news":     "Announcements from the server owner",
 }
 ADMIN_KINDS = {"alerts": "Server alerts: radio station down, library scan failed, disk nearly full"}
 _email_status = {"last_error": "", "last_ok": 0.0}
@@ -5609,6 +5650,42 @@ async def api_admin_email_test(req: Request):
         raise HTTPException(400, f"Couldn't send: {type(e).__name__}: {e}"[:300])
     return {"status": "sent"}
 
+@api.get("/api/admin/email/send-now")
+def api_admin_send_now_info(req: Request):
+    _require_admin(req)
+    since = _new_music_since()
+    total, rows, n = _new_music_summary(since)
+    fresh = n < total
+    return {"ready": _email_ready(), "since": since.timestamp(), "new_songs": n if fresh else 0,
+            "new_albums": len(rows) if fresh else 0,
+            "albums": [f"{r['album']} · {r['artist']}" for r in rows[:6]] if fresh else [],
+            "new_music_people": len(_wanting("new_music")), "news_people": len(_wanting("news"))}
+
+@api.post("/api/admin/email/send-now")
+async def api_admin_send_now(req: Request):
+    _require_admin(req)
+    if not _email_ready():
+        raise HTTPException(400, "Set up and turn on email first")
+    b = await req.json()
+    if b.get("kind") == "new_music":
+        n = await run_in_threadpool(_new_music_digest, _wanting("new_music"), f"manual-{int(_now())}", True)
+        if not n:
+            raise HTTPException(400, "Nothing to send: no new songs since the last email, or no one gets New music emails")
+        return {"sent": n}
+    if b.get("kind") == "news":
+        subject = str(b.get("subject") or "").strip()[:150]
+        msg = str(b.get("message") or "").strip()[:5000]
+        if not subject or not msg:
+            raise HTTPException(400, "Add a subject and a message")
+        people = _wanting("news")
+        if not people:
+            raise HTTPException(400, "No one has turned on Announcements emails yet")
+        body = "<br>".join(_esc(line) for line in msg.splitlines())
+        for uid in people:
+            notify(uid, "news", subject, subject, body, msg, ("Open " + (state.get("name") or "leon.music"), "/"))
+        return {"sent": len(people)}
+    raise HTTPException(400, "Unknown email")
+
 # ── Events that send email ──
 def email_friend_event(from_uid: int, to_uid: int, accepted: bool):
     db = get_db()
@@ -5727,25 +5804,51 @@ def _weekly_digest(uid: int, w0: float, label: str):
     notify(uid, "weekly", f"Your Weekly Rewind: {st['minutes']:,} minutes", f"Your week in music · {label}", body, text,
            ("See your Weekly Rewind", "/?view=weekly-rewind"), [("top", th)] if th else None, key=label)
 
-def _new_music_digest(uids: list, key: str):
+def _new_music_since() -> _dt.datetime:
+    """New-music emails cover what was added since the last one went out (at most a week back)."""
+    since = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=7)
+    last = _email_cfg().get("new_music_sent_at")
+    if last and last > since.timestamp():
+        since = _dt.datetime.fromtimestamp(last, _dt.timezone.utc)
+    return since
+
+def _new_music_summary(since: _dt.datetime):
+    st = since.strftime("%Y-%m-%d %H:%M:%S")
     db = get_db()
     total = db.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
-    since = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=7)
     rows = db.execute("""SELECT album, COALESCE(album_artist,artist) AS artist, MIN(cover_id) AS cover_id, COUNT(*) AS n
                          FROM songs WHERE added_at>=? AND album IS NOT NULL AND album<>''
-                         GROUP BY album, COALESCE(album_artist,artist) ORDER BY MAX(added_at) DESC""",
-                      (since.strftime("%Y-%m-%d %H:%M:%S"),)).fetchall()
-    n_songs = db.execute("SELECT COUNT(*) FROM songs WHERE added_at>=?", (since.strftime("%Y-%m-%d %H:%M:%S"),)).fetchone()[0]
+                         GROUP BY album, COALESCE(album_artist,artist) ORDER BY MAX(added_at) DESC""", (st,)).fetchall()
+    n_songs = db.execute("SELECT COUNT(*) FROM songs WHERE added_at>=?", (st,)).fetchone()[0]
     db.close()
+    return total, rows, n_songs
+
+def _wanting(kind: str) -> list:
+    db = get_db()
+    ids = [r[0] for r in db.execute("SELECT id FROM users WHERE email_verified=1 AND email IS NOT NULL").fetchall()
+           if _user_email(db, r[0], kind)]
+    db.close()
+    return ids
+
+def _new_music_digest(uids: list, key: str, manual: bool = False) -> int:
+    """Email the songs added since the last new-music email. Returns how many people it went to."""
+    total, rows, n_songs = _new_music_summary(_new_music_since())
     if not n_songs or n_songs >= total:            # nothing new, or the very first scan (everything is "new")
-        return
+        return 0
     tiles, imgs = _album_tiles(rows)
     what = f"{len(rows)} new album{'s' if len(rows) != 1 else ''}" if rows else f"{n_songs} new songs"
-    body = f"{n_songs} songs were added to {_esc(state.get('name'))} this week, including {what}:{tiles}"
-    text = f"{n_songs} songs were added this week:\n" + "\n".join(f"- {r['album']} · {r['artist']}" for r in rows[:10])
-    for uid in uids:
-        notify(uid, "new_music", f"New on {state.get('name')}: {what}", f"New this week: {what}", body, text,
+    when = "just now" if manual else "this week"
+    body = f"{n_songs} songs were added to {_esc(state.get('name'))} {when}, including {what}:{tiles}"
+    text = f"{n_songs} songs were added {when}:\n" + "\n".join(f"- {r['album']} · {r['artist']}" for r in rows[:10])
+    db = get_db()
+    targets = [u for u in uids if _user_email(db, u, "new_music") and not _logged(db, u, "new_music", key)]
+    db.close()
+    for uid in targets:
+        notify(uid, "new_music", f"New on {state.get('name')}: {what}", f"New {when}: {what}", body, text,
                ("Open New", "/?view=new"), imgs, key=key)
+    if targets:
+        cfg = load_config(); cfg.setdefault("email", {})["new_music_sent_at"] = _now(); save_config(cfg)
+    return len(targets)
 
 def _eoy_mail(uid: int, year: int):
     db = get_db()
@@ -5839,7 +5942,7 @@ import xml.etree.ElementTree as _ET
 import random as _random
 import subprocess as _subprocess
 
-APP_VERSION = "2.6.1"
+APP_VERSION = "2.6.2"
 SUBSONIC_VERSION = "1.16.1"
 _SUB_ARTICLES = "The El La Los Las Le Les Die Der Das"
 
