@@ -5287,6 +5287,68 @@ async function jamResume(){
 // ═══════════════════════════════════════════════
 //  BOOT
 // ═══════════════════════════════════════════════
+// ── Pages: every view gets a history entry, so Back/Forward and reload work ──
+const ROUTES={showView:'',showArtist:'artist',showAlbumDetail:'album',showPlaylist:'playlist',openUserPlaylist:'my-playlist',
+  openProfile:'user',openGenre:'genre',openRadioList:'station-list',openMixes:'dj-mixes',openCurator:'curator',openDjMix:'dj-mix',
+  openMix:'mix',openWeekly:'weekly',openRewind:'rewind',openChart:'chart',showNewSongs:'new-songs'};
+const ROUTE_ARGS={showArtist:2,showAlbumDetail:1,showPlaylist:2,openUserPlaylist:1,openProfile:1,openGenre:2,openRadioList:1,
+  openCurator:1,openDjMix:1,openMix:1,openWeekly:0,openRewind:2,openChart:1,openMixes:0,showNewSongs:0,showView:1};
+let _routeDepth=0,_routing=false,_routeReady=false;
+function _routeHash(fn,args){
+  const seg=ROUTES[fn];if(fn==='showView')return '#/'+(args[0]==='home'?'':args[0]);
+  const simple=args.map(a=>a&&typeof a==='object'?(a.album||a.name||a.id):a).filter(a=>a!=null&&a!==''&&typeof a!=='object').map(a=>encodeURIComponent(a===false?'':a===true?'essentials':a));
+  return '#/'+seg+(simple.length?'/'+simple.join('/'):'');
+}
+function _saveScroll(){const m=document.querySelector('.main');if(m&&history.state&&history.state.route)
+  history.replaceState({...history.state,scroll:m.scrollTop},'');}
+Object.keys(ROUTES).forEach(fn=>{
+  const orig=window[fn];if(typeof orig!=='function')return;
+  window[fn]=function(...args){
+    const top=_routeDepth===0;_routeDepth++;
+    try{
+      if(top&&_routeReady&&!_routing){
+        const a=args.slice(0,ROUTE_ARGS[fn]),st={route:fn,args:a};
+        const cur=history.state&&history.state.route;
+        if(!(cur===fn&&JSON.stringify(history.state.args)===JSON.stringify(a))){
+          _saveScroll();
+          try{history.pushState(st,'',_routeHash(fn,a));}catch(e){history.pushState({route:fn,args:[]},'',_routeHash(fn,[]));}
+          const m=document.querySelector('.main');if(m)m.scrollTop=0;
+        }
+      }
+      return orig.apply(this,args);
+    }finally{_routeDepth--;}
+  };
+});
+async function _runRoute(st){
+  _routing=true;
+  try{const f=window[st.route];if(typeof f==='function')await f(...(st.args||[]));}catch(e){}
+  finally{_routing=false;}
+  const m=document.querySelector('.main');if(m&&st.scroll!=null)setTimeout(()=>{m.scrollTop=st.scroll;},60);
+}
+window.addEventListener('popstate',e=>{
+  if(_npOpen)return;                          // Back just closed the Now Playing sheet
+  const st=e.state;if(st&&st.route)_runRoute(st);
+  else if(!st&&location.hash.length>2)_routeFromUrl(true);   // a link typed or pasted into the address bar
+  else if(!st||!st.np)_runRoute({route:'showView',args:['home']});
+});
+async function _routeFromUrl(noState){
+  // a reload keeps history.state; a pasted link only has the hash
+  const hs=history.state;
+  if(!noState&&hs&&hs.route){if(!(hs.route==='showView'&&hs.args[0]==='home'))_runRoute(hs);return true;}
+  const h=location.hash.replace(/^#\/?/,'');if(!h)return false;
+  const parts=h.split('/').map(decodeURIComponent),seg=parts.shift();
+  const fn=Object.keys(ROUTES).find(k=>ROUTES[k]===seg&&k!=='showView');
+  let args=parts;
+  if(fn==='showArtist'){const all=await api('/api/artists').catch(()=>[]);const a=all.find(x=>x.name===parts[0]);if(!a)return false;args=[a,parts[1]==='essentials'];}
+  if(fn==='showAlbumDetail'){const all=await api('/api/albums').catch(()=>[]);const a=all.find(x=>x.album===parts[0]);if(!a)return false;args=[a];}
+  const st=fn?{route:fn,args}:{route:'showView',args:[seg]};
+  if(fn&&ROUTE_ARGS[fn]===1&&['openMix','openChart'].includes(fn))return false;   // needs data, not in the link
+  history.replaceState(st,'',location.hash);_runRoute(st);return true;
+}
+async function routeStart(){
+  _routeReady=true;
+  if(!await _routeFromUrl())history.replaceState({route:'showView',args:['home']},'',location.pathname+location.search);
+}
 (async function boot(){
   try{const a=JSON.parse(localStorage.getItem('lm_brand')||'null');if(a)applyBrandColors(a.accent,a.tint);}catch(e){}
   try{const t=localStorage.getItem('lm_theme');if(t!==null)applyTheme(t,false);}catch(e){}
@@ -5302,7 +5364,7 @@ async function jamResume(){
     ME=me.user||null;
     if(me.required&&!ME&&!isAdmin&&!me.shared){showLogin(me.library_password);return;}
     if(st.tracks>0){document.getElementById('setup').style.display='none';initApp();renderUserChip();
-      updateMe();markTab('home');
+      updateMe();markTab('home');routeStart();
       if(ME&&!ME.admin&&!ME.onboarded)showOnboarding();
       else setTimeout(openFromEmailLink,300);
       refreshScrobFlag();jamResume();loadMyAppearance();}
