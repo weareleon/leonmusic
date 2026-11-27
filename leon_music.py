@@ -4462,6 +4462,21 @@ input[type=checkbox]{width:auto}
   </div>
 
   <div class="card">
+    <div class="card-title">Appearance</div>
+    <div style="font-size:12.5px;color:var(--fg2);line-height:1.5">The theme people get until they pick their own in Settings, and CSS that applies to everyone
+      (each person's own custom CSS goes on top). See the <a href="https://weareleon.github.io/leonmusic/docs.html#custom-css" target="_blank" rel="noopener" style="color:var(--accent)">custom CSS guide</a>.</div>
+    <label>Default theme</label>
+    <select id="apTheme"><option value="">System (light or dark, from the device)</option><option value="dark">Dark</option><option value="light">Light</option>
+      <option value="midnight">Midnight</option><option value="sunset">Sunset</option><option value="forest">Forest</option><option value="ocean">Ocean</option>
+      <option value="royal">Royal</option><option value="neon">Neon</option><option value="contrast">High contrast</option><option value="rose">Rosé</option>
+      <option value="paper">Paper</option><option value="sky">Sky</option></select>
+    <label>Custom CSS for everyone</label>
+    <textarea id="apCss" spellcheck="false" style="width:100%;min-height:160px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--fg);font:12.5px/1.5 Consolas,monospace"></textarea>
+    <div class="msg" id="apMsg"></div>
+    <div class="row"><button class="btn btn-primary" onclick="saveAppearance()">Save</button></div>
+  </div>
+
+  <div class="card">
     <div class="card-title">DJ Mixes</div>
     <div style="font-size:12.5px;color:var(--fg2);line-height:1.5">Add DJ mixes from a <b>mix hub</b>: a website that shares mixes with CUE sheets.
       leon.music downloads a mix, cuts it into its songs and adds a curator page for whoever made it. Mixes show up under <b>Search → DJ Mixes</b>.</div>
@@ -4565,6 +4580,7 @@ async function showAdmin(){
   loadEmailUI();
   loadLastfmUI();
   loadHubs();
+  loadAppearanceUI();
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('adminMain').style.display = 'block';
   document.getElementById('logoutBtn').style.display = '';
@@ -4706,6 +4722,19 @@ async function saveTheme(){
   if(r.ok){ m.className = 'msg ok'; m.textContent = 'Saved ✓ — reload the player to see it'; }
   else { const e = await r.json().catch(() => ({})); m.className = 'msg err'; m.textContent = e.detail || 'Failed to save.'; }
   setTimeout(() => m.textContent = '', 4000);
+}
+
+// ── Appearance ──
+async function loadAppearanceUI(){
+  let d;try{d=await (await fetch('/api/appearance')).json();}catch(e){return;}
+  document.getElementById('apTheme').value=d.default_theme||'';document.getElementById('apCss').value=d.css||'';
+}
+async function saveAppearance(){
+  const m=document.getElementById('apMsg');
+  const r=await fetch('/api/admin/appearance',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_token},
+    body:JSON.stringify({default_theme:document.getElementById('apTheme').value,css:document.getElementById('apCss').value})});
+  const e=await r.json().catch(()=>({}));
+  m.className=r.ok?'msg ok':'msg err';m.textContent=r.ok?'Saved. Reload leon.music to see it.':(e.detail||'Failed to save.');
 }
 
 // ── DJ Mixes ──
@@ -5810,7 +5839,7 @@ import xml.etree.ElementTree as _ET
 import random as _random
 import subprocess as _subprocess
 
-APP_VERSION = "2.5.0"
+APP_VERSION = "2.6.0"
 SUBSONIC_VERSION = "1.16.1"
 _SUB_ARTICLES = "The El La Los Las Le Les Die Der Das"
 
@@ -7453,7 +7482,392 @@ def api_mix_audio(mix_id: str):
         raise HTTPException(404)
     return FileResponse(r[0], media_type=mimetypes.guess_type(r[0])[0] or "audio/mpeg")
 
+@api.get("/api/autoplay")
+def api_autoplay(ids: str = "", n: int = 25):
+    """Songs like the ones just played (same artists and genres, popular ones a bit more often) for when a queue ends."""
+    import random as _r
+    seed = [int(x) for x in ids.split(",") if x.strip().isdigit()][:60]
+    db = get_db()
+    rows = [dict(r) for r in db.execute(f"SELECT {_TRACK_COLS},genre,COALESCE(album_artist,artist) AS main_artist FROM songs").fetchall()]
+    plays = {r[0]: r[1] for r in db.execute("SELECT track_id, COUNT(*) FROM plays GROUP BY track_id")}
+    db.close()
+    by_id = {r["id"]: r for r in rows}
+    seeds = [by_id[i] for i in seed if i in by_id]
+    artists = {(r["main_artist"] or "").lower() for r in seeds}
+    genres = {_genre_parts(r["genre"])[0] for r in seeds} - {None, ""}
+    taken = set(seed)
+    def score(r):
+        s = 0.0
+        if (r["main_artist"] or "").lower() in artists: s += 3
+        if _genre_parts(r["genre"])[0] in genres: s += 2
+        return s
+    pool = [r for r in rows if r["id"] not in taken]
+    cand = [r for r in pool if score(r) > 0] or pool
+    rng = _r.Random()
+    weighted = sorted(cand, key=lambda r: -(score(r) + min(plays.get(r["id"], 0), 20) / 10 + rng.random() * 3))
+    out, per_artist = [], {}
+    for r in weighted:                                  # no more than 3 songs per artist
+        a = (r["main_artist"] or "").lower()
+        if per_artist.get(a, 0) >= 3:
+            continue
+        per_artist[a] = per_artist.get(a, 0) + 1
+        out.append({k: v for k, v in r.items() if k != "main_artist"})
+        if len(out) >= max(1, min(n, 50)):
+            break
+    return out
+
+# ── Jam: listen together ──────────────────────────────────────────────────────
+# The server keeps each Jam's shared queue and the clock (which song, where, playing or paused). Everyone streams the
+# songs from leon.music themselves and follows that clock, so all devices play the same thing at the same moment.
+_jams: dict = {}                       # code -> jam
+_jam_lock = threading.Lock()
+_JAM_CODE = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+JAM_MAX_MEMBERS = 32
+JAM_IDLE_END = 5 * 60                  # end a Jam nobody has been connected to for this long
+
+def _jam_user(req: Request) -> dict:
+    u = _session_user(req)
+    if not u or not u["id"]:
+        raise HTTPException(401, "Log in with your own account to Jam")
+    return u
+
+def _jam_track_rows(ids: list) -> dict:
+    if not ids:
+        return {}
+    db = get_db()
+    rows = {r["id"]: dict(r) for r in db.execute(
+        f"SELECT {_TRACK_COLS},mix_id,mix_start,mix_end FROM tracks WHERE id IN ({','.join('?' * len(ids))})", ids)}
+    db.close()
+    return rows
+
+def _jam_card(uid: int) -> dict:
+    db = get_db()
+    r = db.execute("SELECT id,username,display_name,avatar FROM users WHERE id=?", (uid,)).fetchone()
+    db.close()
+    return {"id": uid, **_user_card(r)} if r else {"id": uid, "username": "?", "display_name": "Someone", "avatar": ""}
+
+def _jam_tick(j: dict):
+    """Move the clock forward: when the current song has run out, the next one starts (the server decides for everyone)."""
+    now = _now()
+    while j["playing"] and j["idx"] < len(j["queue"]):
+        cur = j["queue"][j["idx"]]
+        left = (cur["duration"] or 0) - (j["pos"] + now - j["updated"])
+        if left > 0:
+            break
+        ended_at = now + left
+        if j["idx"] + 1 >= len(j["queue"]):
+            j.update(playing=False, pos=cur["duration"] or 0, updated=now)
+        else:
+            j.update(idx=j["idx"] + 1, pos=now - ended_at, updated=ended_at)
+        j["version"] += 1
+
+def _jam_state(j: dict, me: int) -> dict:
+    _jam_tick(j)
+    now = _now()
+    return {"id": j["id"], "host": j["host"], "is_host": j["host"] == me, "allow_control": j["allow_control"],
+            "can_control": j["host"] == me or j["allow_control"], "version": j["version"],
+            "queue": j["queue"], "idx": j["idx"], "playing": j["playing"], "pos": j["pos"], "updated": j["updated"],
+            "server_now": now, "ended": j.get("ended", False),
+            "members": [dict(_jam_card(uid), here=now - m["seen"] < 25, host=uid == j["host"])
+                        for uid, m in j["members"].items()]}
+
+def _jam_get(code: str, u: dict, need_member=True) -> dict:
+    j = _jams.get(str(code or "").upper())
+    if not j or j.get("ended"):
+        raise HTTPException(404, "That Jam has ended")
+    if need_member and u["id"] not in j["members"]:
+        raise HTTPException(403, "Join the Jam first")
+    return j
+
+def _jam_entries(ids: list, by: dict) -> list:
+    rows = _jam_track_rows(ids)
+    out = []
+    for tid in ids:
+        r = rows.get(tid)
+        if r:
+            dur = (r["mix_end"] - r["mix_start"]) if r.get("mix_id") and r.get("mix_end") else r["duration"]
+            out.append({**r, "duration": dur or 0, "entry": secrets.token_hex(4),
+                        "added_by": by.get("display_name") or by.get("username"), "added_by_id": by.get("id")})
+    return out
+
+def _jam_mine(uid: int):
+    return next((j for j in _jams.values() if not j.get("ended") and uid in j["members"]), None)
+
+def _jam_cleanup():
+    now = _now()
+    for code, j in list(_jams.items()):
+        if j.get("ended") and now - j["updated"] > 600:
+            _jams.pop(code, None)
+        elif not j.get("ended") and now - max(m["seen"] for m in j["members"].values()) > JAM_IDLE_END:
+            j.update(ended=True, updated=now); j["version"] += 1
+
+@api.post("/api/jam")
+async def api_jam_start(req: Request):
+    """Start a Jam from what you're playing: the queue, the song and where you are in it."""
+    u = _jam_user(req)
+    b = await req.json()
+    ids = [int(i) for i in (b.get("track_ids") or []) if str(i).isdigit()][:500]
+    with _jam_lock:
+        _jam_cleanup()
+        old = _jam_mine(u["id"])
+        if old:
+            if old["host"] == u["id"]:
+                old.update(ended=True, updated=_now()); old["version"] += 1
+            else:
+                old["members"].pop(u["id"], None); old["version"] += 1
+        code = "".join(secrets.choice(_JAM_CODE) for _ in range(6))
+        while code in _jams:
+            code = "".join(secrets.choice(_JAM_CODE) for _ in range(6))
+        me = _jam_card(u["id"])
+        q = _jam_entries(ids, me)
+        idx = max(0, min(int(b.get("idx") or 0), len(q) - 1)) if q else 0
+        j = {"id": code, "host": u["id"], "allow_control": True, "members": {u["id"]: {"seen": _now()}},
+             "queue": q, "idx": idx, "playing": bool(q) and bool(b.get("playing", True)),
+             "pos": max(0.0, float(b.get("pos") or 0)), "updated": _now(), "version": 1, "created": _now()}
+        _jams[code] = j
+        return _jam_state(j, u["id"])
+
+@api.get("/api/me/jam")
+def api_my_jam(req: Request):
+    """The Jam you're in (to reconnect after a reload) and Jams your friends are hosting."""
+    u = _jam_user(req)
+    with _jam_lock:
+        _jam_cleanup()
+        mine = _jam_mine(u["id"])
+        db = get_db()
+        friends = set(_friend_ids(db, u["id"]))
+        db.close()
+        hosting = [{"id": j["id"], "host": _jam_card(j["host"]), "members": len(j["members"]),
+                    "now": (j["queue"][j["idx"]]["title"] if j["queue"] and j["idx"] < len(j["queue"]) else "")}
+                   for j in _jams.values() if not j.get("ended") and j["host"] in friends and (not mine or j is not mine)]
+        return {"jam": _jam_state(mine, u["id"]) if mine else None, "friends": hosting}
+
+@api.post("/api/jam/{code}/join")
+def api_jam_join(code: str, req: Request):
+    u = _jam_user(req)
+    _rate_check(req)
+    with _jam_lock:
+        j = _jams.get(code.upper())
+        if not j or j.get("ended"):
+            _rate_fail(req)
+            raise HTTPException(404, "No Jam with that code. Check it, or ask for a new one")
+        _rate_ok(req)
+        if u["id"] not in j["members"]:
+            if len(j["members"]) >= JAM_MAX_MEMBERS:
+                raise HTTPException(400, "This Jam is full")
+            other = _jam_mine(u["id"])
+            if other and other is not j:                       # one Jam at a time
+                if other["host"] == u["id"]:
+                    other.update(ended=True, updated=_now())
+                else:
+                    other["members"].pop(u["id"], None)
+                other["version"] += 1
+            j["members"][u["id"]] = {"seen": _now()}
+            j["version"] += 1
+        return _jam_state(j, u["id"])
+
+@api.post("/api/jam/{code}/leave")
+def api_jam_leave(code: str, req: Request):
+    """Leave; when the host leaves, the Jam ends for everyone."""
+    u = _jam_user(req)
+    with _jam_lock:
+        j = _jam_get(code, u)
+        if j["host"] == u["id"]:
+            j.update(ended=True, updated=_now())
+        else:
+            j["members"].pop(u["id"], None)
+        j["version"] += 1
+    return {"status": "ok"}
+
+@api.post("/api/jam/{code}/control")
+async def api_jam_control(code: str, req: Request):
+    u = _jam_user(req)
+    b = await req.json()
+    act = b.get("action")
+    with _jam_lock:
+        j = _jam_get(code, u)
+        if not (j["host"] == u["id"] or j["allow_control"]):
+            raise HTTPException(403, "Only the host can control playback in this Jam")
+        _jam_tick(j)
+        now = _now()
+        cur_pos = j["pos"] + (now - j["updated"] if j["playing"] else 0)
+        if act == "play":
+            j.update(playing=bool(j["queue"]), pos=float(b.get("pos", cur_pos)), updated=now)
+        elif act == "pause":
+            j.update(playing=False, pos=float(b.get("pos", cur_pos)), updated=now)
+        elif act == "seek":
+            j.update(pos=max(0.0, float(b.get("pos") or 0)), updated=now)
+        elif act in ("next", "prev", "jump"):
+            if act == "prev" and cur_pos > 4:
+                n = j["idx"]
+            else:
+                n = j["idx"] + 1 if act == "next" else j["idx"] - 1 if act == "prev" else int(b.get("idx", -1))
+            if not 0 <= n < len(j["queue"]):
+                if act == "next":
+                    j.update(playing=False, pos=0.0, updated=now)
+                    j["version"] += 1
+                    return _jam_state(j, u["id"])
+                raise HTTPException(400, "No song there")
+            j.update(idx=n, pos=0.0, updated=now, playing=True)
+        elif act == "load":
+            # Pressing play on an album/playlist during a Jam: it replaces what's coming up, for everyone
+            ids = [int(i) for i in (b.get("track_ids") or []) if str(i).isdigit()][:500]
+            new = _jam_entries(ids, _jam_card(u["id"]))
+            if not new:
+                raise HTTPException(400, "Nothing to play")
+            j["queue"] = j["queue"][:j["idx"] + 1] + new
+            j.update(idx=j["idx"] + 1 + max(0, min(int(b.get("start") or 0), len(new) - 1)), pos=0.0, updated=now, playing=True)
+        else:
+            raise HTTPException(400, "Unknown action")
+        j["version"] += 1
+        return _jam_state(j, u["id"])
+
+@api.post("/api/jam/{code}/queue")
+async def api_jam_add(code: str, req: Request):
+    """Anyone in the Jam can add songs: to the end, or to play next."""
+    u = _jam_user(req)
+    b = await req.json()
+    ids = [int(i) for i in (b.get("track_ids") or []) if str(i).isdigit()][:100]
+    with _jam_lock:
+        j = _jam_get(code, u)
+        _jam_tick(j)
+        new = _jam_entries(ids, _jam_card(u["id"]))
+        if len(j["queue"]) + len(new) > 1000:
+            raise HTTPException(400, "The Jam's queue is full")
+        if b.get("next"):
+            j["queue"][j["idx"] + 1:j["idx"] + 1] = new
+        else:
+            j["queue"].extend(new)
+        if not j["playing"] and j["idx"] >= len(j["queue"]) - len(new) and new and j["pos"] >= (j["queue"][j["idx"]]["duration"] or 0) - 1:
+            j.update(idx=len(j["queue"]) - len(new), pos=0.0, playing=True, updated=_now())   # queue had run out: start the new songs
+        j["version"] += 1
+        return _jam_state(j, u["id"])
+
+@api.delete("/api/jam/{code}/queue/{entry}")
+def api_jam_remove(code: str, entry: str, req: Request):
+    """You can remove songs you added; the host can remove any. The song that's playing can't be removed."""
+    u = _jam_user(req)
+    with _jam_lock:
+        j = _jam_get(code, u)
+        _jam_tick(j)
+        k = next((i for i, e in enumerate(j["queue"]) if e["entry"] == entry), None)
+        if k is None or k <= j["idx"]:
+            raise HTTPException(400, "Only upcoming songs can be removed")
+        if j["queue"][k]["added_by_id"] != u["id"] and j["host"] != u["id"]:
+            raise HTTPException(403, "Only the host or whoever added it can remove this song")
+        j["queue"].pop(k)
+        j["version"] += 1
+        return _jam_state(j, u["id"])
+
+@api.post("/api/jam/{code}/settings")
+async def api_jam_settings(code: str, req: Request):
+    u = _jam_user(req)
+    b = await req.json()
+    with _jam_lock:
+        j = _jam_get(code, u)
+        if j["host"] != u["id"]:
+            raise HTTPException(403, "Only the host can change this")
+        if "allow_control" in b:
+            j["allow_control"] = bool(b["allow_control"])
+        j["version"] += 1
+        return _jam_state(j, u["id"])
+
+@api.get("/api/jam/{code}/events")
+async def api_jam_events(code: str, req: Request):
+    """Server-sent events: the Jam's state whenever it changes (and a heartbeat). Being connected counts as being here."""
+    u = _jam_user(req)
+    with _jam_lock:
+        _jam_get(code, u)
+    async def gen():
+        last, beat = -1, 0.0
+        while True:
+            if await req.is_disconnected():
+                break
+            with _jam_lock:
+                j = _jams.get(code.upper())
+                if not j or u["id"] not in j["members"] and not j.get("ended"):
+                    yield "event: gone\ndata: {}\n\n"; break
+                if not j.get("ended"):
+                    j["members"][u["id"]]["seen"] = _now()
+                _jam_tick(j)
+                v = j["version"]
+                st = _jam_state(j, u["id"]) if v != last else None
+            if st is not None:
+                last = v
+                yield f"data: {json.dumps(st, ensure_ascii=False)}\n\n"
+                beat = _now()
+                if st["ended"]:
+                    break
+            elif _now() - beat > 15:
+                yield ": keepalive\n\n"; beat = _now()
+            await asyncio.sleep(0.25)
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+# ── Appearance: themes and custom CSS ─────────────────────────────────────────
+THEME_IDS = ('', 'dark', 'light', 'midnight', 'sunset', 'forest', 'ocean', 'royal', 'neon', 'contrast', 'rose', 'paper', 'sky')
+CSS_MAX = 50_000
+
+def init_appearance_db():
+    db = get_db()
+    cols = {r[1] for r in db.execute("PRAGMA table_info(users)")}
+    for col in ("theme", "custom_css"):
+        if col not in cols:
+            db.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT")
+    db.commit(); db.close()
+
+def _clean_css(v) -> str:
+    v = str(v or "")
+    if len(v) > CSS_MAX:
+        raise HTTPException(400, "Custom CSS can be at most 50,000 characters")
+    return v.replace("\x00", "")
+
+@api.get("/api/appearance")
+def api_appearance():
+    """The server's default theme and custom CSS (also used on the login screen)."""
+    c = load_config()
+    return {"default_theme": c.get("default_theme", ""), "css": c.get("custom_css", "")}
+
+@api.get("/api/me/appearance")
+def api_my_appearance(req: Request):
+    u = _require_user(req)
+    db = get_db()
+    r = db.execute("SELECT theme,custom_css FROM users WHERE id=?", (u["id"],)).fetchone()
+    db.close()
+    return {"theme": r["theme"], "css": r["custom_css"] or ""}
+
+@api.patch("/api/me/appearance")
+async def api_set_my_appearance(req: Request):
+    u = _require_user(req)
+    b = await req.json()
+    db = get_db()
+    if "theme" in b:
+        if b["theme"] not in THEME_IDS:
+            db.close(); raise HTTPException(400, "Unknown theme")
+        db.execute("UPDATE users SET theme=? WHERE id=?", (b["theme"], u["id"]))
+    if "css" in b:
+        db.execute("UPDATE users SET custom_css=? WHERE id=?", (_clean_css(b["css"]), u["id"]))
+    db.commit(); db.close()
+    return {"status": "ok"}
+
+@api.post("/api/admin/appearance")
+async def api_admin_appearance(req: Request):
+    _require_admin(req)
+    b = await req.json()
+    c = load_config()
+    if "default_theme" in b:
+        if b["default_theme"] not in THEME_IDS:
+            raise HTTPException(400, "Unknown theme")
+        c["default_theme"] = b["default_theme"]
+    if "css" in b:
+        c["custom_css"] = _clean_css(b["css"])
+    save_config(c)
+    return {"status": "ok"}
+
+_OPEN_PATHS.add("/api/appearance")
+
 init_radio_plays_db()
+init_appearance_db()
 init_dupes_db()          # runs last: init_db() needs helpers defined further down
 init_mixes_db()
 

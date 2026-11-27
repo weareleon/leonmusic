@@ -17,6 +17,12 @@ A self-hosted music player that lives in your system tray. Point it at a folder 
 - **Light and dark themes**, responsive layout, mobile friendly.
 - Just two files: `leon_music.py` (server and tray app) and `frontend.html` (the player UI).
 
+## What's new in 2.6
+
+- **☰ Up Next & Autoplay**: see and edit what plays next. *Play next* and *Add to queue* on every song, drag to reorder, and the shuffled order is shown as it really is. When the queue runs out, Autoplay keeps going with similar songs.
+- **🎧 Jam**: listen together in sync. Start a Jam, share the link or 6-letter code, and everyone hears the same song at the same moment on their own device, with a shared queue and optional host-only controls.
+- **◑ Themes & custom CSS**: 13 themes (Midnight, Sunset, Forest, Ocean, Royal, Neon, High contrast, Rosé, Paper, Sky and more) saved to your account, plus your own CSS. Admins can set a default theme and server-wide CSS. See the [custom CSS guide](https://weareleon.github.io/leonmusic/docs.html#custom-css); `/?nocss` is a safe mode.
+
 ## What's new in 2.5
 
 - **🎧 DJ mixes**: add festival sets, radio shows and mixtapes from open **mix hubs** (Admin → DJ Mixes). leon.music downloads a mix with its CUE sheet, splits it into songs tagged *(Mixed)* and still plays it gaplessly. Every curator gets a page with a banner, logo and collections. Find them under **Search → DJ Mixes**. The official hub is [leon.music Mixes](https://weareleon.github.io/leonmusic-mixes/); the hub format is open source, so anyone can [run their own](https://github.com/weareleon/leonmusic-mixes) and publish mixes with a one-window publisher.

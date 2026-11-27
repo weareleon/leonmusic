@@ -26,13 +26,15 @@
   <b>Getting started</b>
   <a href="#install">Install</a><a href="#first-run">First run</a><a href="#library">Organising your library</a>
   <b>Using leon.music</b>
-  <a href="#home">Home &amp; Made for You</a><a href="#search">Search, genres &amp; decades</a><a href="#new">New &amp; Charts</a><a href="#rewind">Rewind</a><a href="#christmas">Christmas</a><a href="#likes">Likes &amp; playlists</a><a href="#covers">Playlist covers</a><a href="#lyrics">Lyrics</a><a href="#albums">Album pages</a><a href="#explicit">Explicit songs</a>
+  <a href="#home">Home &amp; Made for You</a><a href="#search">Search, genres &amp; decades</a><a href="#new">New &amp; Charts</a><a href="#rewind">Rewind</a><a href="#christmas">Christmas</a><a href="#likes">Likes &amp; playlists</a><a href="#covers">Playlist covers</a><a href="#lyrics">Lyrics</a><a href="#albums">Album pages</a><a href="#explicit">Explicit songs</a><a href="#up-next">Up Next &amp; Autoplay</a>
   <b>Sharing</b>
-  <a href="#accounts">Accounts &amp; logins</a><a href="#profiles">Profiles &amp; friends</a><a href="#phone">On your phone</a><a href="#remote">Listening from anywhere</a>
+  <a href="#accounts">Accounts &amp; logins</a><a href="#profiles">Profiles &amp; friends</a><a href="#jam">Jam: listen together</a><a href="#phone">On your phone</a><a href="#remote">Listening from anywhere</a>
   <b>Live radio</b>
   <a href="#radio">What it is</a><a href="#radio-how">How it works</a><a href="#icecast">Install Icecast</a><a href="#radio-setup">Setting up stations</a><a href="#radio-listen">Listening</a><a href="#radio-manage">Managing &amp; fixes</a><a href="#lists">Station Lists</a><a href="#streams">Internet radio streams</a>
   <b>DJ mixes</b>
   <a href="#mixes">What they are</a><a href="#mixes-listen">Listening</a><a href="#mixes-add">Adding mixes</a><a href="#mixes-publish">Publishing your mixes</a><a href="#mixes-hub">Running a hub</a>
+  <b>Customising</b>
+  <a href="#themes">Themes</a><a href="#custom-css">Custom CSS</a>
   <b>Admin</b>
   <a href="#admin">Admin panel</a><a href="#admins">Admin accounts</a><a href="#email">Email</a><a href="#apps">Apps &amp; scrobbling</a><a href="#data">Configuration &amp; data</a><a href="#build">Building an app</a>
   <b>Reference</b>
@@ -98,6 +100,16 @@ python leon_music.py</pre></div>
 <li><b>End of Year Rewind</b>: every December a banner on Home opens a summary of the whole year.</li></ul>
 <p>Minutes assume a counted song was played in full, so totals are a close estimate.</p>
 
+<h2 id="up-next">Up Next &amp; Autoplay</h2>
+<figure><div class="window"><img class="zoomable" src="assets/up-next.jpg" alt="Up Next panel" loading="lazy"></div><figcaption>Press ☰ in the player to see what's coming up.</figcaption></figure>
+<p>Press <b>☰</b> at the right of the player (on a phone: <b>Up Next</b> on the Now Playing screen) to see the queue:</p>
+<ul><li><b>Now playing</b>, then <b>Next in queue</b>: the songs you added yourself. They always play before anything else.</li>
+<li><b>Next from: …</b> is the rest of what you pressed play on: the album, playlist, mix or chart. Tap any song to jump to it.</li>
+<li>Add songs from any song's <b>···</b> menu: <b>Play next</b> puts it at the front, <b>Add to queue</b> at the end.</li>
+<li>Reorder your queue by dragging (on a phone, with the ▲ ▼ arrows), remove songs with ✕, or press <b>Clear</b>.</li>
+<li><b>Shuffle</b> mixes up what's next and the list shows the shuffled order. Your own queue isn't shuffled.</li>
+<li><b>Autoplay</b> (on by default, switch at the bottom of the panel): when the queue runs out, leon.music keeps going with similar songs, picking from the same artists and genres and favouring what people play.</li></ul>
+
 <h2 id="christmas">Christmas</h2>
 <p>Search has a <b>🎄 Christmas</b> tile (it moves to the front from 15 November to 6 January). It collects everything Christmas: songs whose genre, folder or album mentions Christmas, Xmas, holiday, jul or noël. The page has feature cards (your <b>Holiday station</b> when it's on air, Christmas folder playlists, the song of the season), special playlists (<b>Christmas Classics</b>, <b>Cozy Christmas</b>, <b>Christmas Party</b>, <b>New Christmas Music</b>), top songs, albums and artists.</p>
 
@@ -157,6 +169,21 @@ python leon_music.py</pre></div>
 <p><b>Friends</b> (in the sidebar): search everyone on the server, send requests, accept or decline them, and see what your friends are playing right now. Both people have to agree; removing a friend removes it for both.</p>
 <figure><div class="window"><img class="zoomable" src="assets/friends-mix.jpg" alt="Friends Mix" loading="lazy"></div><figcaption>The <b>Friends Mix</b> in Made for You: what your friends played in the last three weeks, with who played what.</figcaption></figure>
 <p>New profiles share listening with <b>friends only</b>. Friends who choose <i>only me</i> are left out of your Friends Mix.</p>
+
+<h2 id="jam">Jam: listen together</h2>
+<div class="duo"><div class="window"><img class="zoomable" src="assets/jam.jpg" alt="A Jam with three people" loading="lazy"></div><div class="window" style="max-width:300px;margin:0 auto"><img class="zoomable" src="assets/m-jam.jpg" alt="The Jam bar on a phone" loading="lazy"></div></div>
+<p>A <b>Jam</b> lets friends listen together, each on their own device, wherever they are. Everyone hears the same song at the same moment and adds to one shared queue.</p>
+<ol><li><b>Start a Jam</b> from <b>Up Next</b> (☰ → Start) or the <b>Friends</b> page. What you're playing, and your queue, become the Jam.</li>
+<li>Invite people: send the <b>invite link</b> or the <b>6-letter code</b>. Friends also see your Jam on their <b>Friends</b> page with a <b>Join</b> button.</li>
+<li>Everyone can add songs with <b>···</b> → <b>Play next</b> or <b>Add to queue</b>. Each song shows who added it.</li>
+<li>Pressing play on an album or playlist during a Jam plays it for everyone, replacing what's coming up.</li></ol>
+<ul><li><b>Who controls playback:</b> by default anyone can play, pause, skip and seek. The host can switch off <b>Everyone can control playback</b> so only they can. Everyone can still add songs.</li>
+<li>You can remove songs you added; the host can remove any.</li>
+<li>The pink <b>Jam</b> bar shows the code and how many are listening. Tap it for the Jam panel with everyone in it (👑 is the host).</li>
+<li><b>Leave Jam</b> stops it for you. When the host presses <b>End Jam</b>, it ends for everyone. A Jam nobody is connected to ends after 5 minutes.</li>
+<li>Reloading the page or locking your phone is fine: you're put back in the Jam, in sync.</li>
+<li>Jams need user accounts. Each person's plays still count for their own Rewind, charts and scrobbles.</li></ul>
+<div class="note tip"><span>💡</span><span><b>How it stays in sync:</b> the server keeps the Jam's clock (which song, where, playing or paused) and pushes every change instantly. Each device streams the music itself and quietly corrects itself if it drifts more than about half a second.</span></div>
 
 <h2 id="phone">On your phone</h2>
 <div class="duo"><div class="window" style="max-width:300px;margin:0 auto"><img class="zoomable" src="assets/m-library.jpg" alt="Library tab on a phone" loading="lazy"></div><div class="window" style="max-width:300px;margin:0 auto"><img class="zoomable" src="assets/m-nowplaying.jpg" alt="Now Playing on a phone" loading="lazy"></div></div>
@@ -369,6 +396,69 @@ FILE "mix.mp3" MP3
 <p>Prefer to host it yourself? Any web server works, for example behind a Cloudflare Tunnel. Run <code>build_hub.py</code> without <code>--audio-base</code> and keep the audio next to <code>hub.json</code>. The format is documented in <a href="https://github.com/weareleon/leonmusic-mixes/blob/main/SPEC.md">SPEC.md</a>.</p>
 <div class="note warn"><span>⚖️</span><span>The licence covers the code and the format, not the music. Only publish mixes you made or have permission to share.</span></div>
 
+<h2 id="themes">Themes</h2>
+<figure><div class="window"><img class="zoomable" src="assets/appearance.jpg" alt="Appearance settings with themes and custom CSS" loading="lazy"></div></figure>
+<p>Open <b>Settings → Appearance</b> and pick a theme. It's saved to your account, so it follows you to every device.</p>
+<ul><li><b>System</b>, <b>Dark</b> and <b>Light</b> use your server's accent colour. System follows your device's light or dark setting.</li>
+<li><b>Midnight</b>, <b>Sunset</b>, <b>Forest</b>, <b>Ocean</b>, <b>Royal</b>, <b>Neon</b> and <b>High contrast</b> are dark themes with their own colours; <b>Rosé</b>, <b>Paper</b> and <b>Sky</b> are light ones.</li>
+<li>The ◑ button in the top bar switches between System, Dark and Light.</li>
+<li>Admins can pick the <b>default theme</b> for everyone who hasn't chosen one: <b>Admin panel → Appearance</b>. It's also used on the login screen.</li></ul>
+<div class="duo"><div class="window"><img class="zoomable" src="assets/theme-midnight.jpg" alt="Midnight theme" loading="lazy"></div><div class="window"><img class="zoomable" src="assets/theme-paper.jpg" alt="Paper theme" loading="lazy"></div></div>
+
+<h2 id="custom-css">Custom CSS</h2>
+<p>Custom CSS lets you change anything about how leon.music looks: colours, fonts, sizes, spacing, or hiding things you don't use. It's plain <a href="https://developer.mozilla.org/en-US/docs/Learn/CSS/First_steps">CSS</a>, applied on top of everything else.</p>
+<ul><li><b>Just for you:</b> <b>Settings → Appearance → Custom CSS</b>. Type, press <b>Preview</b> to try it, <b>Save</b> to keep it (it follows your account), or <b>Remove</b> to go back.</li>
+<li><b>For everyone on the server:</b> <b>Admin panel → Appearance → Custom CSS for everyone</b>.</li></ul>
+<p>The order is: <b>theme → the server's CSS → your CSS</b>, so yours always wins.</p>
+
+<h3>Colours and sizes (CSS variables)</h3>
+<p>The easiest way to restyle leon.music is to change these variables on <code>:root</code>. Everything uses them.</p>
+<table><tr><th>Variable</th><th>What it colours</th></tr>
+<tr><td><code>--bg</code></td><td>The page background and sidebar</td></tr>
+<tr><td><code>--bg2</code></td><td>The main area and cards</td></tr>
+<tr><td><code>--bg3</code>, <code>--bg4</code></td><td>Buttons, inputs, hover and pressed states</td></tr>
+<tr><td><code>--fg</code>, <code>--fg2</code>, <code>--fg3</code></td><td>Text: main, secondary, faint</td></tr>
+<tr><td><code>--border</code></td><td>Lines and outlines</td></tr>
+<tr><td><code>--accent</code>, <code>--accent2</code></td><td>The highlight colour (play buttons, links, active items) and its lighter version</td></tr>
+<tr><td><code>--sidebar-w</code>, <code>--player-h</code></td><td>Sidebar width and player height (desktop)</td></tr></table>
+
+<h3>Targeting parts of the app</h3>
+<table><tr><th>Selector</th><th>Part</th></tr>
+<tr><td><code>.sidebar</code>, <code>.topbar</code>, <code>.main</code>, <code>.content</code></td><td>Sidebar, top bar, the scrolling page and its padding</td></tr>
+<tr><td><code>.player</code>, <code>.p-title</code>, <code>.p-play</code></td><td>The player bar, its song title and play button</td></tr>
+<tr><td><code>.track-row</code>, <code>.track-title</code>, <code>.track-thumb</code></td><td>Song rows in lists</td></tr>
+<tr><td><code>.album-card</code>, <code>.album-art</code>, <code>.detail-art</code></td><td>Album cards, their covers, and the big cover on detail pages</td></tr>
+<tr><td><code>.featured</code></td><td>The banner at the top of Home</td></tr>
+<tr><td><code>.tabbar</code>, <code>.np</code></td><td>Phone tab bar and the Now Playing screen</td></tr>
+<tr><td><code>body[data-view="home"]</code></td><td>Only on one page. Views include <code>home</code>, <code>search</code>, <code>new</code>, <code>radio</code>, <code>charts</code>, <code>library</code>, <code>settings</code>, <code>friends</code>, <code>mixes</code></td></tr>
+<tr><td><code>:root[data-lm-theme="paper"]</code>, <code>:root[data-theme="light"]</code></td><td>Only with one theme, or only in light mode</td></tr></table>
+<p>To find any other class, right-click something in your browser and choose <b>Inspect</b>.</p>
+
+<h3>Examples</h3>
+<div class="code"><pre><span class="c">/* Your own accent colour (overrides the theme's) */</span>
+:root { --accent: #00b894; --accent2: #55d6b8; }
+
+<span class="c">/* A different font (any Google Font works) */</span>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&amp;display=swap');
+body, button, input { font-family: 'Inter', sans-serif !important; }
+
+<span class="c">/* Round covers everywhere */</span>
+.album-art, .track-thumb, .detail-art { border-radius: 50% !important; }
+
+<span class="c">/* Compact song lists */</span>
+.track-row { padding: 4px 10px; min-height: 0; }
+
+<span class="c">/* A background image behind everything */</span>
+.main { background: linear-gradient(rgba(0,0,0,.75), rgba(0,0,0,.9)), url('https://example.com/bg.jpg') center/cover fixed; }
+
+<span class="c">/* Hide the Home banner */</span>
+body[data-view="home"] .featured { display: none; }
+
+<span class="c">/* Only tweak the Paper theme */</span>
+:root[data-lm-theme="paper"] { --bg2: #fffdf7; }</pre></div>
+<div class="note tip"><span>🛟</span><span><b>Broke something?</b> Open your server's address with <code>/?nocss</code> at the end (e.g. <code>https://music.example.com/?nocss</code>). Custom CSS is skipped for that visit, so you can go to Settings and fix or remove it.</span></div>
+<p>Custom CSS can only change how things look; it can't run code. Server CSS applies to everyone, so admins should test it with <b>Preview</b> in their own Settings first. Each one can be up to 50,000 characters.</p>
+
 <h2 id="admin">Admin panel</h2>
 <p>Open <code>/admin</code> (for example <code>http://localhost:7733/admin</code>) and sign in with the admin password.</p>
 <ul><li><b>Logo &amp; covers</b>: place your logo on Essentials and playlist covers. It also appears on Made for You cards.</li>
@@ -426,6 +516,9 @@ pyinstaller --onefile --windowed --name "leon.music" leon_music.py</pre></div>
 <tr><td><code>/rest/*</code></td><td>Subsonic API (1.16.1, OpenSubsonic) for apps</td></tr>
 <tr><td><code>GET /api/radio/lists</code>, <code>/radio/lists/{id}</code></td><td>Station Lists</td></tr>
 <tr><td><code>GET /api/mixes</code>, <code>/mixes/{id}</code>, <code>/mixes/curators/{id}</code></td><td>DJ mixes and curators</td></tr>
+<tr><td><code>GET /api/autoplay?ids=</code></td><td>Similar songs for when a queue ends</td></tr>
+<tr><td><code>POST /api/jam</code>, <code>/jam/{code}/join</code>, <code>/control</code>, <code>/queue</code>, <code>GET /jam/{code}/events</code></td><td>Jams (the events stream is server-sent events)</td></tr>
+<tr><td><code>GET /api/appearance</code>, <code>GET|PATCH /api/me/appearance</code></td><td>Server and personal theme and custom CSS</td></tr>
 <tr><td><code>GET /api/explicit</code></td><td>IDs of explicit songs</td></tr>
 <tr><td><code>GET|POST /api/broadcast</code></td><td>Live radio setup (admin)</td></tr>
 <tr><td><code>/api/admin/*</code></td><td>Admin actions (users, settings, stations)</td></tr></table>
