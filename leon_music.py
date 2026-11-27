@@ -5839,7 +5839,7 @@ import xml.etree.ElementTree as _ET
 import random as _random
 import subprocess as _subprocess
 
-APP_VERSION = "2.6.0"
+APP_VERSION = "2.6.1"
 SUBSONIC_VERSION = "1.16.1"
 _SUB_ARTICLES = "The El La Los Las Le Les Die Der Das"
 
