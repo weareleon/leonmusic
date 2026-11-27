@@ -17,6 +17,14 @@ A self-hosted music player that lives in your system tray. Point it at a folder 
 - **Light and dark themes**, responsive layout, mobile friendly.
 - Just two files: `leon_music.py` (server and tray app) and `frontend.html` (the player UI).
 
+## What's new in 2.7
+
+- **📺 Music TV**: turn your music videos into a live channel that plays around the clock, with your channel name and the song on screen. Everyone on your server can tune in from the Music Videos page, and you can rebroadcast it to YouTube Live, Twitch, Kick or any RTMP server. Needs ffmpeg.
+- **▶ Music videos**: point leon.music at a folder of music videos (one folder per artist) and they get their own category in Search, a full-screen player, a row on artist pages and a **Video Essentials** playlist for every artist. Existing servers get a setup guide on Home.
+- **A new artist page**: the artist's photo as the backdrop, latest release, top songs, albums and singles, Music Videos, and Essentials, Video Essentials and Deep Cuts playlists.
+- **A new setup wizard** that shows album covers from your own music folder, checks folders as you type, and can add your music videos.
+- Fixes: every Made for You card opens its own playlist again, lyrics no longer show a ♪ between every line, the setup wizard no longer flashes on load, and the player bar lines up when nothing is playing.
+
 ## What's new in 2.6
 
 - **☰ Up Next & Autoplay**: see and edit what plays next. *Play next* and *Add to queue* on every song, drag to reorder, and the shuffled order is shown as it really is. When the queue runs out, Autoplay keeps going with similar songs.
