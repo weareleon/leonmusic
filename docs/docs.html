@@ -26,11 +26,13 @@
   <b>Getting started</b>
   <a href="#install">Install</a><a href="#first-run">First run</a><a href="#library">Organising your library</a>
   <b>Using leon.music</b>
-  <a href="#home">Home &amp; Made for You</a><a href="#search">Search, genres &amp; decades</a><a href="#new">New &amp; Charts</a><a href="#rewind">Rewind</a><a href="#christmas">Christmas</a><a href="#likes">Likes &amp; playlists</a><a href="#covers">Playlist covers</a><a href="#lyrics">Lyrics</a><a href="#albums">Album pages</a><a href="#explicit">Explicit songs</a><a href="#up-next">Up Next &amp; Autoplay</a>
+  <a href="#home">Home &amp; Made for You</a><a href="#search">Search, genres &amp; decades</a><a href="#new">New &amp; Charts</a><a href="#rewind">Rewind</a><a href="#christmas">Christmas</a><a href="#likes">Likes &amp; playlists</a><a href="#covers">Playlist covers</a><a href="#lyrics">Lyrics</a><a href="#albums">Album pages</a><a href="#artists">Artist pages</a><a href="#explicit">Explicit songs</a><a href="#up-next">Up Next &amp; Autoplay</a>
   <b>Sharing</b>
   <a href="#accounts">Accounts &amp; logins</a><a href="#profiles">Profiles &amp; friends</a><a href="#jam">Jam: listen together</a><a href="#phone">On your phone</a><a href="#remote">Listening from anywhere</a>
   <b>Live radio</b>
   <a href="#radio">What it is</a><a href="#radio-how">How it works</a><a href="#icecast">Install Icecast</a><a href="#radio-setup">Setting up stations</a><a href="#radio-listen">Listening</a><a href="#radio-manage">Managing &amp; fixes</a><a href="#lists">Station Lists</a><a href="#streams">Internet radio streams</a>
+  <b>Music videos</b>
+  <a href="#videos">Music videos</a><a href="#videos-watch">Watching</a><a href="#music-tv">Music TV</a><a href="#music-tv-rebroadcast">Rebroadcasting</a>
   <b>DJ mixes</b>
   <a href="#mixes">What they are</a><a href="#mixes-listen">Listening</a><a href="#mixes-add">Adding mixes</a><a href="#mixes-publish">Publishing your mixes</a><a href="#mixes-hub">Running a hub</a>
   <b>Customising</b>
@@ -57,9 +59,11 @@ python leon_music.py</pre></div>
 <div class="note"><span>ℹ️</span><span>On some Linux systems you need <code>pip install -r requirements.txt --break-system-packages</code>, and the tray icon needs an appindicator backend (for example <code>sudo apt install gir1.2-appindicator3-0.1</code>).</span></div>
 
 <h2 id="first-run">First run</h2>
-<p>The welcome wizard asks for three things:</p>
-<ol><li><b>Your music folder.</b> leon.music only reads it and never changes your files.</li>
-<li><b>A name for your library</b>, shown in the app and on generated covers.</li>
+<div class="window"><img class="zoomable" src="assets/setup-wizard.jpg" alt="The setup wizard, with album covers from the music folder scrolling behind it" loading="lazy"></div>
+<p>The welcome wizard fills its background with album covers from your own music folder, and asks for:</p>
+<ol><li><b>Your music folder.</b> It checks the folder as you type and tells you how many songs it found and which subfolders become playlists. leon.music only reads it and never changes your files.</li>
+<li><b>Your music videos folder</b> (optional, you can skip it). See <a href="#videos">Music videos</a>.</li>
+<li><b>A name for your library</b>, shown in the app and on generated covers, with a preview.</li>
 <li><b>An admin password</b> (8 or more characters). You need it for the admin panel and for logging in as <code>admin</code>.</li></ol>
 <p>Then leon.music scans your files. Rescans skip unchanged files, so they're quick. Rescan from the tray menu or from <b>Settings</b>.</p>
 
@@ -142,6 +146,15 @@ python leon_music.py</pre></div>
 <ul><li><b>Featured On</b>: the artist's <b>Essentials</b>, the <b>folder playlists</b> that include songs from the album, and the <b>genre and decade playlists</b> from Search's categories that include them (for example <i>Pop Hits</i> or <i>2020s Deep Cuts</i>), with how many of the album's songs each one has.</li>
 <li><b>More from <i>artist</i></b>: their other albums.</li>
 <li><b>You May Also Like</b>: albums by other artists, genre matches first, then similar era and what's popular on the server.</li></ul>
+
+<h2 id="artists">Artist pages</h2>
+<div class="window"><img class="zoomable" src="assets/artist-page.jpg" alt="An artist page" loading="lazy"></div>
+<p>Artist pages open with the artist's photo, blurred behind the page so every artist gets their own colours, and <b>Play</b> and <b>Shuffle</b>. Then:</p>
+<ul><li><b>Latest release</b> and <b>Top songs</b>: the nine most-played songs on your server. <b>Top songs ›</b> opens the full Essentials playlist.</li>
+<li><b>Albums</b> and <b>Singles &amp; EPs</b>. Releases with 1–3 songs count as singles and 4–6 as EPs, and album names ending in "- Single" or "- EP" are recognised.</li>
+<li><b>Music Videos</b>, when the artist has any.</li>
+<li><b>Artist playlists</b>: <b>Essentials</b>, <b>Video Essentials</b> and <b>Deep Cuts</b> (their least-played songs, for artists with more than nine).</li>
+<li><b>All songs</b> at the bottom.</li></ul>
 
 <h2 id="explicit">Explicit songs</h2>
 <p>Songs tagged as explicit get a small <span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:3px;background:#a6a6b0;color:#0c0c0e;font-size:9.5px;font-weight:800;vertical-align:2px">E</span> badge everywhere. leon.music reads:</p>
@@ -337,6 +350,53 @@ python leon_music.py</pre></div>
 <h2 id="streams">Internet radio streams</h2>
 <p>You can also add any Icecast or Shoutcast stream URL in the admin panel's <b>Radio stations</b> card. These appear under <i>More Stations</i>, with now-playing info read from the stream.</p>
 
+<h2 id="videos">Music videos</h2>
+<div class="window"><img class="zoomable" src="assets/music-videos.jpg" alt="The Music Videos page" loading="lazy"></div>
+<p>Music videos live in their own folder, separate from your music, with a folder for each artist:</p>
+<div class="code"><pre>music videos/
+├─ Ed Sheeran/
+│  └─ Ed Sheeran - Shape of You.mp4
+└─ Nathan Dawe/
+   └─ Nathan Dawe X Abi Flynn - Here In Your Arms.mp4</pre></div>
+<ul><li>New servers are asked for the folder in the setup wizard. On existing servers, admins see a banner on Home with a short setup guide. You can change the folder or rescan later with <b>⚙ Video folder</b> on the Music Videos page.</li>
+<li>Name files <b>Artist - Title</b>. Tags like "(Official Video)" or "(Lyric Video)" are removed from the title.</li>
+<li>Every artist named in the file appears: "Kaio X Saint Ojo - Gold Teeth" shows on both artists' pages, even if the folder name is spelled differently.</li>
+<li>When a video's title and artist match a song in your library, the player offers <b>♪ Play the song</b>.</li>
+<li>Browsers play <b>MP4, M4V, WebM and MOV</b>. Files like .mkv and .avi are skipped and listed in the setup guide.</li>
+<li>Thumbnails: an image saved in the video is used if there is one. Otherwise the first person to open the Music Videos page creates them, from a frame about 20% into each video. They're saved on the server.</li>
+<li>Videos are rescanned when the server starts.</li></ul>
+
+<h2 id="videos-watch">Watching</h2>
+<div class="window"><img class="zoomable" src="assets/video-player.jpg" alt="The full-screen video player" loading="lazy"></div>
+<p>Open <b>Search → Music Videos</b> for the newest video, <b>Recently added</b>, <b>Most watched</b> and a row for each artist. Videos also show up in search results and on artist pages, and each artist with videos has a <b>Video Essentials</b> playlist.</p>
+<p>Videos open in a full-screen player. Your music pauses while it plays, and the next video starts on its own. The controls fade while you watch:</p>
+<table><tr><th>Key</th><th>Does</th></tr>
+<tr><td><code>Space</code> / <code>K</code></td><td>Play or pause</td></tr>
+<tr><td><code>←</code> <code>→</code></td><td>Back or forward 5 seconds</td></tr>
+<tr><td><code>↑</code> <code>↓</code></td><td>Volume</td></tr>
+<tr><td><code>F</code> / <code>M</code></td><td>Full screen / mute</td></tr>
+<tr><td><code>N</code> / <code>P</code></td><td>Next or previous video</td></tr>
+<tr><td><code>Esc</code> or Back</td><td>Close the player</td></tr></table>
+
+<h2 id="music-tv">Music TV</h2>
+<div class="window"><img class="zoomable" src="assets/music-tv.jpg" alt="Music TV live at the top of the Music Videos page" loading="lazy"></div>
+<p><b>Music TV</b> turns your music videos into a live channel that plays around the clock. While it's live, it's at the top of the Music Videos page for everyone on your server. The channel name is in the top right and the song in the bottom left, drawn into the video itself.</p>
+<ol><li>Admins: open <b>Search → Music Videos</b> and press <b>Set up Music TV</b>.</li>
+<li><b>Channel:</b> name it and choose what plays: all your videos shuffled, or only the artists you pick.</li>
+<li><b>On screen:</b> turn the channel name and the song text on or off, and pick <b>720p</b> (3 Mbps) or <b>1080p</b> (5 Mbps).</li>
+<li><b>Rebroadcast</b> (optional), then <b>Go live</b>.</li></ol>
+<ul><li>Viewers start muted (browsers require a click before sound), with <b>Unmute</b> and <b>Full screen</b>.</li>
+<li>Admins get <b>Manage</b>: what's playing, viewers, rebroadcast status, <b>Skip video</b>, <b>Stop channel</b> and <b>Settings</b>.</li>
+<li>The channel comes back on air by itself when the server restarts.</li></ul>
+<div class="note"><span>⚙️</span><span><b>Needs ffmpeg.</b> Every video is re-encoded to one continuous MPEG-TS stream, which keeps about one CPU core busy while the channel is live. The browser player (mpegts.js) loads from the jsDelivr CDN, so viewers need internet access, and iPhones need iOS 17.1 or newer.</span></div>
+
+<h2 id="music-tv-rebroadcast">Rebroadcasting</h2>
+<div class="window"><img class="zoomable" src="assets/tv-wizard.jpg" alt="Adding rebroadcast destinations" loading="lazy"></div>
+<p>Music TV can send the channel to <b>YouTube Live</b>, <b>Twitch</b>, <b>Kick</b> or any RTMP server at the same time. The server address is filled in for the big platforms; paste the <b>stream key</b> from the platform's live dashboard. The stream is copied, not encoded again, so each destination costs almost no CPU, only upload bandwidth.</p>
+<ul><li>Stream keys are saved in your server's config and never sent back to the browser. Leave the box blank to keep a saved key.</li>
+<li>Each destination has its own buffer, so a slow or unreachable platform never affects the others or your own viewers. It reconnects every 15 seconds and shows the error under <b>Manage</b>.</li>
+<li>Only rebroadcast videos you're allowed to stream publicly.</li></ul>
+
 <h2 id="mixes">DJ mixes: what they are</h2>
 <figure><div class="window"><img class="zoomable" src="assets/dj-mix.jpg" alt="A DJ mix page" loading="lazy"></div><figcaption>A DJ mix: one continuous set, split into its songs.</figcaption></figure>
 <p>A <b>DJ mix</b> is a whole set, like a festival performance, a radio show or a mixtape, recorded as one long audio file. leon.music splits it into the songs that were played, using the mix's <b>CUE sheet</b>, so you can see every song, skip between them, like them and add them to playlists. It still plays as one seamless mix, with no gaps between the songs.</p>
@@ -520,6 +580,10 @@ pyinstaller --onefile --windowed --name "leon.music" leon_music.py</pre></div>
 <tr><td><code>POST /api/jam</code>, <code>/jam/{code}/join</code>, <code>/control</code>, <code>/queue</code>, <code>GET /jam/{code}/events</code></td><td>Jams (the events stream is server-sent events)</td></tr>
 <tr><td><code>GET /api/appearance</code>, <code>GET|PATCH /api/me/appearance</code></td><td>Server and personal theme and custom CSS</td></tr>
 <tr><td><code>GET /api/explicit</code></td><td>IDs of explicit songs</td></tr>
+<tr><td><code>GET /api/artist/page?name=</code></td><td>Latest release, top songs, albums and singles for an artist page</td></tr>
+<tr><td><code>GET /api/videos</code>, <code>?artist=</code>, <code>?q=</code>, <code>/videos/{id}/stream</code>, <code>/videos/{id}/thumb</code></td><td>Music videos</td></tr>
+<tr><td><code>GET /api/tv</code>, <code>/api/tv/stream.ts</code></td><td>Music TV status and the live MPEG-TS stream</td></tr>
+<tr><td><code>GET|POST /api/admin/videos</code>, <code>/api/admin/tv</code></td><td>Video folder and Music TV setup (admin)</td></tr>
 <tr><td><code>GET|POST /api/broadcast</code></td><td>Live radio setup (admin)</td></tr>
 <tr><td><code>/api/admin/*</code></td><td>Admin actions (users, settings, stations)</td></tr></table>
 

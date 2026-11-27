@@ -497,7 +497,7 @@ api = FastAPI(title="leon.music", docs_url=None, redoc_url=None)
 # No CORS middleware: the player is served from this same origin, so cross-site pages get no access.
 
 # ── Library access gate (optional library password) ──────────────────────────
-_OPEN_PATHS = {"/api/status", "/api/setup", "/api/library/login", "/api/library/logout",
+_OPEN_PATHS = {"/api/status", "/api/setup", "/api/setup/check", "/api/setup/covers", "/api/library/login", "/api/library/logout",
                "/api/admin/login", "/api/admin/check", "/api/auth/me", "/api/auth/login", "/api/auth/logout"}
 
 def _lib_locked() -> bool:
@@ -592,9 +592,117 @@ async def api_setup(req: Request):
     upd = {"music_dir": str(music_dir), "name": name}
     if body.get("admin_password"):
         upd["admin_password_hash"] = _hash_pw(_valid_new_pw(body["admin_password"]))
+    vraw = (body.get("video_dir") or "").strip()
+    if vraw:
+        vdir = Path(os.path.normpath(vraw)).expanduser()
+        if not vdir.is_dir():
+            raise HTTPException(400, f"Video folder not found: {vdir}")
+        upd["video_dir"] = str(vdir)
+    upd["video_banner_dismissed"] = True                 # new installs were asked in the wizard already
     update_config(**upd)
     threading.Thread(target=scan_library, daemon=True).start()
+    if vraw:
+        threading.Thread(target=lambda: scan_videos(), daemon=True).start()
     return {"status": "ok", "music_dir": str(music_dir), "name": name}
+
+@api.post("/api/setup/check")
+async def api_setup_check(req: Request):
+    """Setup wizard: does this folder exist, and roughly how much music is in it? (first run only, like /api/setup)"""
+    if load_config().get("music_dir"):
+        _require_admin(req)
+    body = await req.json()
+    video = body.get("kind") == "video"
+    exts = VIDEO_EXTS if video else AUDIO_EXTS
+    raw = (body.get("music_dir") or "").strip()
+    default = str(Path.home() / ("Videos" if video else "Music"))
+    if video and not raw:
+        return {"ok": False, "path": "", "default": default, "error": "Paste the folder with your music videos"}
+    p = Path(os.path.normpath(raw or default)).expanduser()
+    if not p.is_dir():
+        return {"ok": False, "path": str(p), "default": default, "error": "Folder not found" if not p.exists() else "That's a file, not a folder"}
+    def count():
+        n, folders, t0 = 0, set(), _now()
+        for root, dirs, files in os.walk(p):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            hits = sum(1 for f in files if os.path.splitext(f)[1].lower() in exts)
+            if hits:
+                n += hits
+                rel = Path(root).relative_to(p).parts
+                if rel:
+                    folders.add(rel[0])
+            if _now() - t0 > 4:                 # huge or slow drive: give an estimate, the scan does the rest
+                return n, folders, True
+        return n, folders, False
+    n, folders, partial = await run_in_threadpool(count)
+    if video:
+        skipped = sum(1 for _r, _d, fs in os.walk(p) for f in fs if os.path.splitext(f)[1].lower() in VIDEO_SKIPPED)
+        return {"ok": True, "path": str(p), "videos": n, "partial": partial, "skipped": skipped,
+                "artists": sorted(folders, key=str.lower)[:8], "artist_count": len(folders)}
+    return {"ok": True, "path": str(p), "default": default, "songs": n, "partial": partial,
+            "playlists": sorted(folders, key=str.lower)[:8], "playlist_count": len(folders)}
+
+_setup_cover_cache: dict = {}
+
+@api.post("/api/setup/covers")
+async def api_setup_covers(req: Request):
+    """Setup wizard background: small covers read straight from the chosen music folder (first run only)."""
+    if load_config().get("music_dir"):
+        _require_admin(req)
+    raw = ((await req.json()).get("music_dir") or "").strip()
+    p = Path(os.path.normpath(raw or str(Path.home() / "Music"))).expanduser()
+    if not p.is_dir():
+        return {"covers": []}
+    key = str(p)
+    if key in _setup_cover_cache:
+        return {"covers": _setup_cover_cache[key]}
+    def collect():
+        import base64, hashlib, random as _r
+        albums, t0 = [], _now()
+        for root, dirs, files in os.walk(p):           # one entry per folder that holds music (≈ one album)
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            audio = sorted(f for f in files if os.path.splitext(f)[1].lower() in AUDIO_EXTS)
+            if audio:
+                albums.append((root, files, audio))
+            if _now() - t0 > 3 or len(albums) > 4000:
+                break
+        if len(albums) > 60:                            # spread the picks over the whole library, not just "A…"
+            step = len(albums) / 60
+            albums = [albums[int(i * step)] for i in range(60)]
+        _r.shuffle(albums)
+        out, seen = [], set()
+        for root, files, audio in albums:
+            if len(out) >= 36 or _now() - t0 > 8:
+                break
+            data = None
+            for f in files:
+                if f.lower() in ("cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png"):
+                    try:
+                        data = Path(root, f).read_bytes()
+                    except OSError:
+                        pass
+                    break
+            if not data:
+                for f in audio[:3]:
+                    data = read_tags(Path(root, f)).get("cover_data")
+                    if data:
+                        break
+            if not data:
+                continue
+            h = hashlib.md5(data).hexdigest()
+            if h in seen:
+                continue
+            seen.add(h)
+            try:
+                im = Image.open(io.BytesIO(data)).convert("RGB")
+                im.thumbnail((220, 220))
+                buf = io.BytesIO(); im.save(buf, "JPEG", quality=78)
+                out.append("data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode())
+            except Exception:
+                continue
+        return out
+    covers = await run_in_threadpool(collect)
+    _setup_cover_cache[key] = covers
+    return {"covers": covers}
 
 @api.get("/api/scan/start")
 def api_scan_start(req: Request):
@@ -1552,7 +1660,10 @@ async def _lifespan(_app):
     threading.Thread(target=mark_duplicates, daemon=True).start()
     threading.Thread(target=_email_loop, daemon=True, name="email").start()
     threading.Thread(target=_scrobble_loop, daemon=True, name="scrobble").start()
+    threading.Thread(target=lambda: scan_videos(), daemon=True, name="videos").start()
+    threading.Thread(target=lambda: tv_autostart(), daemon=True, name="music-tv-start").start()
     yield
+    tv_stop()
 
 api.router.lifespan_context = _lifespan
 
@@ -1788,6 +1899,34 @@ def _pic_response(req: Request, jpg: Path) -> Response:
     if req.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=headers)
     return Response(jpg.read_bytes(), media_type="image/jpeg", headers=headers)
+
+@api.get("/api/artist/page")
+def api_artist_page(name: str):
+    """Everything the artist page shows: latest release, top songs (by plays), albums and singles."""
+    db = get_db()
+    rel = [dict(r) for r in db.execute(
+        """SELECT album, COALESCE(album_artist,artist) AS artist, MAX(year) AS year, COUNT(*) AS track_count,
+                  SUM(duration) AS total_duration, MIN(cover_id) AS cover_id, MAX(added_at) AS added, MAX(mtime) AS mt
+           FROM songs WHERE COALESCE(album_artist,artist)=? AND album IS NOT NULL AND album<>''
+           GROUP BY album""", (name,)).fetchall()]
+    for r in rel:
+        low = (r["album"] or "").lower()
+        r["kind"] = ("Single" if low.endswith("- single") or r["track_count"] <= 3 else
+                     "EP" if low.endswith("- ep") or low.endswith(" ep") or r["track_count"] <= 6 else "Album")
+    rel.sort(key=lambda r: (r["year"] or 0, r["added"] or "", r["mt"] or 0), reverse=True)
+    top = [dict(r) for r in db.execute(
+        """SELECT s.id,s.title,s.artist,s.album,s.duration,s.cover_id,s.year,s.genre,COUNT(p.track_id) AS plays
+           FROM songs s LEFT JOIN plays p ON p.track_id=s.id
+           WHERE COALESCE(s.album_artist,s.artist)=? GROUP BY s.id
+           ORDER BY plays DESC, s.year DESC, s.title LIMIT 50""", (name,)).fetchall()]
+    db.close()
+    kind = {r["album"]: r["kind"] for r in rel}
+    for t in top:
+        t["kind"] = kind.get(t["album"], "")
+    for r in rel:
+        r.pop("added", None); r.pop("mt", None)
+    return {"name": name, "latest": rel[0] if rel else None, "top": top,
+            "albums": [r for r in rel if r["kind"] == "Album"], "singles": [r for r in rel if r["kind"] != "Album"]}
 
 @api.get("/api/artist/pic")
 def api_artist_pic(name: str, req: Request):
@@ -5942,7 +6081,7 @@ import xml.etree.ElementTree as _ET
 import random as _random
 import subprocess as _subprocess
 
-APP_VERSION = "2.6.3"
+APP_VERSION = "2.7.0"
 SUBSONIC_VERSION = "1.16.1"
 _SUB_ARTICLES = "The El La Los Las Le Les Die Der Das"
 
@@ -7971,6 +8110,652 @@ _OPEN_PATHS.add("/api/appearance")
 
 init_radio_plays_db()
 init_appearance_db()
+
+# ── Music videos: a separate folder, one sub-folder per artist (Artist/Artist - Title.mp4) ─────────────
+VIDEO_EXTS     = {".mp4", ".m4v", ".webm", ".mov"}          # what browsers can play
+VIDEO_SKIPPED  = {".mkv", ".avi", ".wmv", ".flv", ".mpg", ".mpeg", ".3gp", ".ts"}
+THUMB_DIR      = CONFIG_PATH.parent / "video_thumbs"
+_video_state   = {"scanning": False, "unsupported": [], "unsupported_count": 0}
+_VID_JUNK      = re.compile(r"\s*[\(\[][^\)\]]*(official|video|lyric|audio|visuali[sz]er|hd|4k|music)[^\)\]]*[\)\]]", re.I)
+_ARTIST_SPLIT  = re.compile(r"\s+(?:x|X|×|&|and|feat\.?|ft\.?|featuring|vs\.?|with)\s+|\s*,\s*|\s*/\s*")
+
+def init_videos_db():
+    db = get_db()
+    db.execute("""CREATE TABLE IF NOT EXISTS videos(
+        id INTEGER PRIMARY KEY, path TEXT UNIQUE, folder TEXT, credit TEXT, title TEXT, artists_norm TEXT,
+        duration REAL, size INTEGER, mtime REAL, added_at REAL, track_id INTEGER, thumb INTEGER DEFAULT 0, plays INTEGER DEFAULT 0)""")
+    db.commit(); db.close()
+
+def _video_dir() -> Optional[Path]:
+    v = (load_config().get("video_dir") or "").strip()
+    return Path(os.path.normpath(v)).expanduser() if v else None
+
+def _video_names(folder: str, stem: str):
+    """'Nathan Dawe X Abi Flynn - Here In Your Arms (Official Video)' → credit, clean title, every artist named."""
+    credit, title = (stem.split(" - ", 1) + [""])[:2] if " - " in stem else (folder or "", stem)
+    title = _VID_JUNK.sub("", title).strip() or stem
+    names = {folder.lower().strip()} if folder else set()
+    names |= {n.lower().strip() for n in _ARTIST_SPLIT.split(credit or "") if n.strip()}
+    return credit.strip() or folder, title, "|" + "|".join(sorted(n for n in names if n)) + "|"
+
+def _video_match_track(db, title: str, names: str):
+    t = title.lower()
+    for r in db.execute("SELECT id, title, artist, COALESCE(album_artist,artist) AS aa FROM songs WHERE lower(title)=? "
+                        "OR lower(title) LIKE ?", (t, t + " (%")).fetchall():
+        who = f"{r['artist']} {r['aa']}".lower()
+        if any(n and n in who for n in names.strip("|").split("|")):
+            return r["id"]
+    return None
+
+def scan_videos():
+    vd = _video_dir()
+    if not vd or not vd.is_dir() or _video_state["scanning"]:
+        return
+    _video_state["scanning"] = True
+    try:
+        init_videos_db()
+        db = get_db()
+        known = {r["path"]: dict(r) for r in db.execute("SELECT id,path,mtime FROM videos")}
+        seen, skipped = set(), []
+        for root, dirs, files in os.walk(vd):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            rel = Path(root).relative_to(vd).parts
+            folder = rel[0] if rel else ""
+            for f in files:
+                ext = os.path.splitext(f)[1].lower()
+                fp = os.path.join(root, f)
+                if ext in VIDEO_SKIPPED:
+                    skipped.append(os.path.relpath(fp, vd)); continue
+                if ext not in VIDEO_EXTS or f.startswith("."):
+                    continue
+                seen.add(fp)
+                try:
+                    st = os.stat(fp)
+                except OSError:
+                    continue
+                if fp in known and abs((known[fp]["mtime"] or 0) - st.st_mtime) < 1:
+                    continue
+                credit, title, names = _video_names(folder, os.path.splitext(f)[0])
+                dur, cover = 0.0, None
+                try:
+                    mf = MutagenFile(fp)
+                    if mf is not None and getattr(mf, "info", None):
+                        dur = float(getattr(mf.info, "length", 0) or 0)
+                    covr = (mf.tags or {}).get("covr") if mf is not None and mf.tags is not None else None
+                    if covr:
+                        cover = bytes(covr[0])
+                except Exception:
+                    pass
+                tid = _video_match_track(db, title, names)
+                if fp in known:
+                    vid = known[fp]["id"]
+                    db.execute("UPDATE videos SET folder=?,credit=?,title=?,artists_norm=?,duration=?,size=?,mtime=?,track_id=? WHERE id=?",
+                               (folder, credit, title, names, dur, st.st_size, st.st_mtime, tid, vid))
+                else:
+                    vid = db.execute("INSERT INTO videos(path,folder,credit,title,artists_norm,duration,size,mtime,added_at,track_id) "
+                                     "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                                     (fp, folder, credit, title, names, dur, st.st_size, st.st_mtime, _now(), tid)).lastrowid
+                if cover:
+                    try:
+                        im = Image.open(io.BytesIO(cover)).convert("RGB"); im.thumbnail((640, 360))
+                        THUMB_DIR.mkdir(parents=True, exist_ok=True); im.save(THUMB_DIR / f"{vid}.jpg", "JPEG", quality=82)
+                        db.execute("UPDATE videos SET thumb=1 WHERE id=?", (vid,))
+                    except Exception:
+                        pass
+        for path, r in known.items():                   # deleted or moved files
+            if path not in seen:
+                db.execute("DELETE FROM videos WHERE id=?", (r["id"],))
+                try:
+                    (THUMB_DIR / f"{r['id']}.jpg").unlink()
+                except OSError:
+                    pass
+        db.commit(); db.close()
+        _video_state["unsupported"], _video_state["unsupported_count"] = sorted(skipped)[:20], len(skipped)
+    except Exception as e:
+        print(f"[videos] scan failed: {e}", file=sys.stderr)
+    finally:
+        _video_state["scanning"] = False
+
+def _video_row(r) -> dict:
+    return {"id": r["id"], "title": r["title"], "artist": r["credit"] or r["folder"], "folder": r["folder"],
+            "duration": r["duration"] or 0, "thumb": bool(r["thumb"]), "plays": r["plays"] or 0,
+            "added_at": r["added_at"], "track_id": r["track_id"]}
+
+@api.get("/api/videos")
+def api_videos(artist: Optional[str] = None, q: Optional[str] = None):
+    if not _video_dir():
+        return {"configured": False, "videos": []}
+    init_videos_db()
+    db = get_db()
+    sql, p = "SELECT * FROM videos WHERE 1=1", []
+    if artist:
+        sql += " AND artists_norm LIKE ?"; p.append(f"%|{artist.lower().strip()}|%")
+    if q:
+        sql += " AND (title LIKE ? OR credit LIKE ? OR folder LIKE ?)"; p += [f"%{q}%"] * 3
+    rows = db.execute(sql + " ORDER BY folder COLLATE NOCASE, title COLLATE NOCASE", p).fetchall()
+    db.close()
+    return {"configured": True, "scanning": _video_state["scanning"], "videos": [_video_row(r) for r in rows]}
+
+def _video_path(vid: int) -> Path:
+    db = get_db(); r = db.execute("SELECT path FROM videos WHERE id=?", (vid,)).fetchone(); db.close()
+    if not r or not Path(r["path"]).is_file():
+        raise HTTPException(404)
+    return Path(r["path"])
+
+@api.get("/api/tracks/{tid}")
+def api_track_one(tid: int):
+    db = get_db()
+    r = db.execute("SELECT id,title,artist,album,track_num,disc_num,year,duration,cover_id,playlist,mix_id,mix_start,mix_end "
+                   "FROM tracks WHERE id=?", (tid,)).fetchone()
+    db.close()
+    if not r:
+        raise HTTPException(404)
+    return dict(r)
+
+@api.get("/api/videos/{vid}/stream")
+def api_video_stream(vid: int, request: Request):
+    path = _video_path(vid)
+    mime = mimetypes.guess_type(str(path))[0] or "video/mp4"
+    if path.suffix.lower() == ".m4v": mime = "video/mp4"
+    if _NATIVE_RANGES:
+        return FileResponse(str(path), media_type=mime)
+    size = path.stat().st_size
+    m = re.match(r"bytes=(\d+)-(\d*)", request.headers.get("range") or "")
+    if m:
+        start = int(m.group(1)); end = min(int(m.group(2)) if m.group(2) else size - 1, size - 1); length = end - start + 1
+        def _iter():
+            with open(path, "rb") as f:
+                f.seek(start); rem = length
+                while rem > 0:
+                    chunk = f.read(min(262144, rem))
+                    if not chunk: break
+                    rem -= len(chunk); yield chunk
+        return StreamingResponse(_iter(), status_code=206, media_type=mime, headers={
+            "Content-Range": f"bytes {start}-{end}/{size}", "Accept-Ranges": "bytes", "Content-Length": str(length)})
+    return FileResponse(str(path), media_type=mime, headers={"Accept-Ranges": "bytes", "Content-Length": str(size)})
+
+@api.get("/api/videos/{vid}/thumb")
+def api_video_thumb(vid: int):
+    f = THUMB_DIR / f"{vid}.jpg"
+    if not f.is_file():
+        raise HTTPException(404)
+    return FileResponse(str(f), media_type="image/jpeg", headers={"Cache-Control": "public,max-age=86400"})
+
+@api.post("/api/videos/{vid}/thumb")
+async def api_video_thumb_set(vid: int, req: Request, duration: float = 0):
+    """The browser grabs a frame for videos without a thumbnail (no ffmpeg needed) and sends it here once."""
+    db = get_db(); r = db.execute("SELECT thumb,duration FROM videos WHERE id=?", (vid,)).fetchone()
+    if not r:
+        db.close(); raise HTTPException(404)
+    if duration and not r["duration"]:
+        db.execute("UPDATE videos SET duration=? WHERE id=?", (min(float(duration), 36000), vid))
+    if not r["thumb"]:
+        data = await req.body()
+        if len(data) > 600_000:
+            db.close(); raise HTTPException(413)
+        try:
+            im = Image.open(io.BytesIO(data)).convert("RGB"); im.thumbnail((640, 360))
+            THUMB_DIR.mkdir(parents=True, exist_ok=True); im.save(THUMB_DIR / f"{vid}.jpg", "JPEG", quality=82)
+            db.execute("UPDATE videos SET thumb=1 WHERE id=?", (vid,))
+        except Exception:
+            db.close(); raise HTTPException(400, "Not an image")
+    db.commit(); db.close()
+    return {"ok": True}
+
+@api.post("/api/videos/{vid}/play")
+def api_video_play(vid: int):
+    db = get_db(); db.execute("UPDATE videos SET plays=COALESCE(plays,0)+1 WHERE id=?", (vid,)); db.commit(); db.close()
+    return {"ok": True}
+
+@api.get("/api/admin/videos")
+def api_admin_videos(req: Request):
+    _require_admin(req)
+    init_videos_db()
+    db = get_db(); n = db.execute("SELECT COUNT(*) FROM videos").fetchone()[0]; db.close()
+    vd = _video_dir()
+    return {"video_dir": str(vd) if vd else "", "count": n if vd else 0, "scanning": _video_state["scanning"],
+            "unsupported": _video_state["unsupported"], "unsupported_count": _video_state["unsupported_count"],
+            "banner_dismissed": bool(load_config().get("video_banner_dismissed"))}
+
+@api.post("/api/admin/videos")
+async def api_admin_videos_set(req: Request):
+    _require_admin(req)
+    b = await req.json()
+    if b.get("dismiss_banner"):
+        update_config(video_banner_dismissed=True)
+    if "video_dir" in b:
+        raw = (b.get("video_dir") or "").strip()
+        if raw:
+            vd = Path(os.path.normpath(raw)).expanduser()
+            if not vd.is_dir():
+                raise HTTPException(400, f"Folder not found: {vd}")
+            update_config(video_dir=str(vd), video_banner_dismissed=True)
+        else:
+            update_config(video_dir="")
+            db = get_db(); db.execute("DELETE FROM videos"); db.commit(); db.close()
+    if b.get("video_dir") or b.get("rescan"):
+        threading.Thread(target=scan_videos, daemon=True).start()
+    return {"ok": True}
+
+init_videos_db()
+
+# ── Music TV: a live channel made from the music videos ───────────────────────────────────────────────
+# One ffmpeg per video re-encodes it to a common format (with the channel name top-right and the
+# song bottom-left burned in) and writes MPEG-TS to a pipe. Timestamps carry on from video to video
+# (-output_ts_offset), so browsers and RTMP relays see one continuous stream.
+import collections as _collections, queue as _queue, random as _tvrand, subprocess as _tvsub
+
+TV_DIR = CONFIG_PATH.parent / "tv"
+TV_PLATFORMS = {
+    "youtube": {"name": "YouTube Live", "url": "rtmp://a.rtmp.youtube.com/live2"},
+    "twitch":  {"name": "Twitch", "url": "rtmp://live.twitch.tv/app"},
+    "kick":    {"name": "Kick", "url": "rtmps://fa723fc1b171.global-contribute.live-video.net/app"},
+    "custom":  {"name": "Custom RTMP", "url": ""},
+}
+_tv = {"running": False, "proc": None, "thread": None, "clients": set(), "lock": threading.Lock(),
+       "ring": _collections.deque(), "ring_bytes": 0, "now": None, "started": 0.0, "relays": {}, "error": "", "skip": False}
+
+def _tv_cfg() -> dict:
+    c = load_config().get("tv") or {}
+    c.setdefault("name", f"{state['name']} TV"); c.setdefault("mode", "all"); c.setdefault("artists", [])
+    c.setdefault("overlay_name", True); c.setdefault("overlay_now", True); c.setdefault("quality", "720")
+    c.setdefault("dests", []); c.setdefault("enabled", False)
+    return c
+
+def _tv_font() -> str:
+    for d in _font_dirs():
+        for n in ("Montserrat-Black.ttf", "Montserrat-ExtraBold.ttf", "Montserrat-Bold.ttf", "segoeuib.ttf", "arialbd.ttf",
+                  "Arial Bold.ttf", "DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf", "Helvetica.ttc"):
+            for f in (d / n, *d.rglob(n)) if d.exists() else ():
+                if f.is_file():
+                    return str(f)
+    return ""
+
+def _ff_path(x: str) -> str:
+    """A path inside an ffmpeg filter: forward slashes, escaped drive colon, quoted."""
+    return "'" + str(x).replace("\\", "/").replace(":", "\\:").replace("'", "") + "'"
+
+def _tv_probe(path: str):
+    probe = FFMPEG and str(Path(FFMPEG).with_name("ffprobe" + (".exe" if FFMPEG.lower().endswith(".exe") else "")))
+    if probe and Path(probe).exists():
+        try:
+            out = _tvsub.run([probe, "-v", "error", "-show_entries", "stream=codec_type:format=duration", "-of", "json", path],
+                             capture_output=True, timeout=20, creationflags=getattr(_tvsub, "CREATE_NO_WINDOW", 0))
+            d = json.loads(out.stdout or b"{}")
+            has_a = any(st.get("codec_type") == "audio" for st in d.get("streams", []))
+            return has_a, float((d.get("format") or {}).get("duration") or 0)
+        except Exception:
+            pass
+    return True, 0.0
+
+_TV_BURST: list = []
+def _tv_burst() -> list:
+    """ffmpeg 6.1+ can read the first seconds of each video faster than real time, which hides the gap between videos."""
+    if not _TV_BURST:
+        try:
+            out = _tvsub.run([FFMPEG, "-hide_banner", "-h", "full"], capture_output=True, timeout=20,
+                             creationflags=getattr(_tvsub, "CREATE_NO_WINDOW", 0)).stdout
+            _TV_BURST.append(b"readrate_initial_burst" in out)
+        except Exception:
+            _TV_BURST.append(False)
+    return ["-readrate_initial_burst", "1"] if _TV_BURST[0] else []
+
+_TV_PROBES: dict = {}
+def _tv_probe_cached(path: str):
+    if path not in _TV_PROBES:
+        _TV_PROBES[path] = _tv_probe(path)
+    return _TV_PROBES[path]
+
+def _tv_pick(order: list, last):
+    """Next video: work through a shuffled list of the channel's videos, then reshuffle."""
+    if not order:
+        c = _tv_cfg(); db = get_db()
+        rows = [dict(r) for r in db.execute("SELECT * FROM videos").fetchall()]; db.close()
+        if c["mode"] == "artists" and c["artists"]:
+            want = [a.lower() for a in c["artists"]]
+            rows = [r for r in rows if any(f"|{a}|" in (r["artists_norm"] or "") for a in want)]
+        rows = [r for r in rows if Path(r["path"]).is_file()]
+        _tvrand.shuffle(rows)
+        if len(rows) > 1 and last and rows[0]["id"] == last:
+            rows.append(rows.pop(0))
+        order.extend(rows)
+    return order.pop(0) if order else None
+
+def _tv_send(chunk: bytes):
+    with _tv["lock"]:
+        _tv["ring"].append(chunk); _tv["ring_bytes"] += len(chunk)
+        while _tv["ring_bytes"] > 2_500_000 and len(_tv["ring"]) > 1:     # a couple of seconds for people who just tuned in
+            _tv["ring_bytes"] -= len(_tv["ring"].popleft())
+        dead = []
+        for q in _tv["clients"]:
+            try:
+                q.put_nowait(chunk)
+            except _queue.Full:
+                dead.append(q)                                              # too slow: drop them, the player reconnects
+        for q in dead:
+            _tv["clients"].discard(q)
+    for rid, r in list(_tv["relays"].items()):                         # each relay has its own queue: a slow or stuck
+        q = r.get("q")                                                    # platform never holds up the channel
+        if q is not None and r.get("proc") is not None:
+            try:
+                q.put_nowait(chunk)
+            except _queue.Full:
+                pass
+
+def _tv_relay_loop(dest: dict):
+    """Rebroadcast: copy the channel's stream to an RTMP server (no second encode)."""
+    rid = dest["id"]
+    url = (dest.get("url") or "").rstrip("/") + "/" + (dest.get("key") or "") if dest.get("key") else (dest.get("url") or "")
+    while _tv["running"] and dest.get("enabled", True):
+        r = _tv["relays"].setdefault(rid, {})
+        try:
+            p = _tvsub.Popen([FFMPEG, "-hide_banner", "-loglevel", "error", "-f", "mpegts", "-i", "pipe:0", "-c", "copy",
+                              "-f", "flv", "-flvflags", "no_duration_filesize", url],
+                             stdin=_tvsub.PIPE, stdout=_tvsub.DEVNULL, stderr=_tvsub.PIPE,
+                             creationflags=getattr(_tvsub, "CREATE_NO_WINDOW", 0))
+        except Exception as e:
+            r.update(state="error", error=str(e)[:200]); return
+        q = _queue.Queue(maxsize=300)
+        def feed(p=p, q=q):
+            while p.poll() is None and _tv["running"]:
+                try:
+                    c = q.get(timeout=1)
+                except _queue.Empty:
+                    continue
+                try:
+                    p.stdin.write(c)
+                except Exception:
+                    break
+        r.update(proc=p, q=q, state="live", error="", since=_now())
+        threading.Thread(target=feed, daemon=True, name="tv-relay-feed").start()
+        err = p.stderr.read().decode("utf-8", "replace") if p.stderr else ""
+        p.wait()
+        r["q"] = None
+        if not _tv["running"]:
+            break
+        r.update(state="error", error=(err.strip().splitlines() or ["Disconnected"])[-1][:240], proc=None)
+        for _ in range(15):                                                 # try again in 15 s
+            if not _tv["running"]:
+                break
+            sleep(1)
+    _tv["relays"].get(rid, {}).update(state="off", proc=None)
+
+def _tv_cmd(v: dict, offset: float, font: str):
+    """ffmpeg command for one video, plus (has_audio, duration)."""
+    c = _tv_cfg()
+    H = 1080 if str(c["quality"]) == "1080" else 720
+    W = H * 16 // 9
+    has_a, dur = _tv_probe_cached(v["path"])
+    dur = dur or v.get("duration") or 0
+    tag = f"{v['id']}"                                   # per-video text files: the next video starts while this one plays
+    (TV_DIR / "name.txt").write_text(c["name"] or state["name"], encoding="utf-8")
+    (TV_DIR / f"title{tag}.txt").write_text(v["title"] or "", encoding="utf-8")
+    (TV_DIR / f"artist{tag}.txt").write_text((v["credit"] or v["folder"] or "").upper(), encoding="utf-8")
+    ff = f":fontfile={_ff_path(font)}" if font else ""
+    fade = "alpha='if(lt(t,0.6),0,if(lt(t,1.4),(t-0.6)/0.8,1))'"
+    base = f"[0:v]scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black,fps=30,setsar=1"
+    vf = []
+    if c["overlay_now"]:
+        grad = TV_DIR / f"shade{H}.png"
+        if not grad.exists():                               # soft fade to black behind the song name
+            gh = int(H * 0.42); g = Image.new("RGBA", (W, gh))
+            for y in range(gh):
+                g.paste((0, 0, 0, int(165 * (y / gh) ** 1.8)), (0, y, W, y + 1))
+            g.save(grad)
+        base += f"[b];movie={_ff_path(grad)}[g];[b][g]overlay=0:{H}-h"
+        vf.append(f"drawtext=textfile={_ff_path(TV_DIR / f'artist{tag}.txt')}{ff}:fontsize={int(H*0.03)}:fontcolor=white@0.8:"
+                  f"x={int(H*0.06)}:y=h-{int(H*0.105)}:shadowcolor=black@0.5:shadowx=2:shadowy=2:{fade}")
+        vf.append(f"drawtext=textfile={_ff_path(TV_DIR / f'title{tag}.txt')}{ff}:fontsize={int(H*0.058)}:fontcolor=white:"
+                  f"x={int(H*0.06)}:y=h-{int(H*0.19)}:shadowcolor=black@0.55:shadowx=2:shadowy=3:{fade}")
+    if c["overlay_name"]:
+        vf.append(f"drawtext=textfile={_ff_path(TV_DIR / 'name.txt')}{ff}:fontsize={int(H*0.036)}:fontcolor=white@0.9:"
+                  f"x=w-tw-{int(H*0.06)}:y={int(H*0.055)}:shadowcolor=black@0.5:shadowx=2:shadowy=2")
+    vf.append("format=yuv420p")
+    graph = base + "," + ",".join(vf) + "[v]"
+    vb = "5000k" if H == 1080 else "3000k"
+    cmd = [FFMPEG, "-hide_banner", "-loglevel", "error", "-i", v["path"]]
+    if not has_a:
+        cmd += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
+    cmd += ["-filter_complex", graph, "-map", "[v]", "-map", "0:a:0" if has_a else "1:a:0"]
+    if not has_a:
+        cmd += ["-shortest"]
+    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-b:v", vb, "-minrate", vb, "-maxrate", vb, "-bufsize", str(int(vb[:-1]) // 2) + "k",
+            "-x264-params", "nal-hrd=cbr:force-cfr=1", "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
+            "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+            "-muxrate", str(_tv_muxrate(H)), "-output_ts_offset", f"{offset:.3f}", "-mpegts_flags", "+resend_headers", "-f", "mpegts", "pipe:1"]
+    return cmd, dur
+
+def _tv_muxrate(H: int) -> int:
+    """Constant transport-stream bitrate (bits/s): video + audio + headroom, padded by the muxer."""
+    return 6_000_000 if H == 1080 else 3_700_000
+
+def _tv_encoder():
+    """Encodes the channel ahead of time (faster than real time) into a bounded queue; the pacer sends it out."""
+    order, last = [], None
+    font = _tv_font()
+    TV_DIR.mkdir(parents=True, exist_ok=True)
+    offset = 0.0
+    while _tv["running"]:
+        gen = _tv["gen"]
+        v = _tv_pick(order, last)
+        if not v:
+            _tv["error"] = "No music videos to play"; _tv["running"] = False; break
+        c = _tv_cfg(); H = 1080 if str(c["quality"]) == "1080" else 720
+        rate = _tv_muxrate(H) / 8                                           # bytes per second
+        if _tv.get("rate") != rate:
+            _tv["rate"] = rate
+        try:
+            cmd, dur = _tv_cmd(v, offset, font)
+            proc = _tvsub.Popen(cmd, stdout=_tvsub.PIPE, stderr=_tvsub.PIPE, creationflags=getattr(_tvsub, "CREATE_NO_WINDOW", 0))
+        except Exception as e:
+            _tv["error"] = f"Couldn't start ffmpeg: {e}"[:240]; _tv["running"] = False; break
+        _tv["proc"] = proc
+        meta = {"id": v["id"], "title": v["title"], "artist": v["credit"] or v["folder"], "duration": dur, "thumb": bool(v["thumb"])}
+        _tv["q"].put((gen, "seg", meta))
+        if order:
+            threading.Thread(target=_tv_probe_cached, args=(order[0]["path"],), daemon=True).start()
+        n, fd = 0, proc.stdout.fileno()
+        while True:
+            try:
+                chunk = os.read(fd, 188 * 350)
+            except OSError:
+                break
+            if not chunk:
+                break
+            n += len(chunk)
+            while _tv["running"] and _tv["gen"] == gen:
+                try:
+                    _tv["q"].put((gen, "data", chunk), timeout=0.5); break    # blocks while ~30 s are queued
+                except _queue.Full:
+                    continue
+            if not _tv["running"] or _tv["gen"] != gen:
+                break
+        if proc.poll() is None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        proc.wait()
+        err = proc.stderr.read().decode("utf-8", "replace").strip() if proc.stderr else ""
+        if not _tv["running"]:
+            break
+        if _tv["gen"] != gen:                                               # skipped: carry on from what was actually sent
+            offset = _tv["sent"] / rate + 0.5
+        else:
+            offset += n / rate                                              # constant-rate mux: bytes ↔ seconds
+            if n < rate and err:
+                _tv["error"] = (err.splitlines() or ["ffmpeg stopped"])[-1][:240]
+        for f in (TV_DIR / f"title{v['id']}.txt", TV_DIR / f"artist{v['id']}.txt"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+        last = v["id"]
+    _tv["proc"] = None
+
+def _tv_pacer():
+    """Sends the encoded stream out at exactly its own bitrate, so it plays in real time with no gaps between videos."""
+    t0, sent0 = _now(), _tv["sent"]
+    while _tv["running"]:
+        try:
+            gen, kind, item = _tv["q"].get(timeout=0.5)
+        except _queue.Empty:
+            t0, sent0 = _now(), _tv["sent"]; continue
+        if gen != _tv["gen"]:
+            continue                                                        # left over from a skipped video
+        if kind == "seg":
+            if _tv["now"]:
+                try:
+                    db = get_db(); db.execute("UPDATE videos SET plays=COALESCE(plays,0)+1 WHERE id=?", (_tv["now"]["id"],)); db.commit(); db.close()
+                except Exception:
+                    pass
+            _tv["now"] = item; _tv["started"] = _now(); _tv["error"] = ""
+            continue
+        _tv_send(item)
+        _tv["sent"] += len(item)
+        rate = _tv.get("rate") or 462_500
+        due = t0 + (_tv["sent"] - sent0) / rate
+        wait = due - _now()
+        if wait > 0:
+            sleep(wait)
+        elif wait < -2:                                                     # fell behind (slow computer): don't burst to catch up
+            t0, sent0 = _now(), _tv["sent"]
+
+def tv_start():
+    if _tv["running"] or not FFMPEG:
+        return
+    _tv["running"] = True; _tv["error"] = ""; _tv["now"] = None; _tv["sent"] = 0; _tv["gen"] = 0
+    _tv["q"] = _queue.Queue(maxsize=400)                                    # ~30 s of encoded video ready to go
+    with _tv["lock"]:
+        _tv["ring"].clear(); _tv["ring_bytes"] = 0
+    _tv["thread"] = threading.Thread(target=_tv_encoder, daemon=True, name="music-tv-encode"); _tv["thread"].start()
+    threading.Thread(target=_tv_pacer, daemon=True, name="music-tv-pace").start()
+    for d in _tv_cfg()["dests"]:
+        if d.get("enabled", True) and (d.get("url") or "").strip():
+            threading.Thread(target=_tv_relay_loop, args=(d,), daemon=True, name="tv-relay").start()
+
+def tv_stop():
+    _tv["running"] = False
+    for p in [_tv.get("proc")] + [r.get("proc") for r in _tv["relays"].values()]:
+        if p and p.poll() is None:
+            try:
+                p.kill()
+            except Exception:
+                pass
+    _tv["relays"].clear(); _tv["now"] = None
+    with _tv["lock"]:
+        for q in _tv["clients"]:
+            try:
+                q.put_nowait(None)
+            except _queue.Full:
+                pass
+        _tv["clients"].clear()
+
+def tv_autostart():
+    sleep(5)
+    if _tv_cfg().get("enabled") and _video_dir():
+        tv_start()
+
+def _tv_public(c: dict) -> dict:
+    n = _tv["now"]
+    return {"configured": bool(load_config().get("tv")), "live": _tv["running"] and bool(n), "starting": _tv["running"] and not n,
+            "name": c["name"], "now": n, "elapsed": (_now() - _tv["started"]) if n else 0, "viewers": len(_tv["clients"])}
+
+@api.get("/api/tv")
+def api_tv():
+    return _tv_public(_tv_cfg())
+
+@api.get("/api/tv/stream.ts")
+def api_tv_stream():
+    if not _tv["running"]:
+        raise HTTPException(404, "Music TV is off air")
+    q = _queue.Queue(maxsize=400)
+    with _tv["lock"]:
+        for c in _tv["ring"]:
+            q.put_nowait(c)
+        _tv["clients"].add(q)
+    def gen():
+        try:
+            while True:
+                try:
+                    c = q.get(timeout=20)
+                except _queue.Empty:
+                    if not _tv["running"]:
+                        break
+                    continue
+                if c is None:
+                    break
+                yield c
+        finally:
+            with _tv["lock"]:
+                _tv["clients"].discard(q)
+    return StreamingResponse(gen(), media_type="video/mp2t", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+def _tv_admin_view() -> dict:
+    c = _tv_cfg()
+    def rstate(d):
+        r = _tv["relays"].get(d["id"]) or {}
+        st = r.get("state", "off")
+        q = r.get("q")
+        if st == "live" and q is not None and q.qsize() > 250:                 # data isn't going out: still connecting (or stuck)
+            st = "connecting"
+        return st, r.get("error", "")
+    dests = [{**{k: v for k, v in d.items() if k != "key"}, "has_key": bool(d.get("key")),
+              "state": rstate(d)[0], "error": rstate(d)[1]} for d in c["dests"]]
+    db = get_db()
+    arts = sorted({(r["credit"] or r["folder"] or "").strip() for r in db.execute("SELECT credit, folder FROM videos")} - {""}, key=str.lower)
+    folders = sorted({r[0] for r in db.execute("SELECT DISTINCT folder FROM videos WHERE folder<>''")}, key=str.lower)
+    n = db.execute("SELECT COUNT(*) FROM videos").fetchone()[0]; db.close()
+    return {**_tv_public(c), "cfg": {k: c[k] for k in ("name", "mode", "artists", "overlay_name", "overlay_now", "quality", "enabled")},
+            "dests": dests, "platforms": TV_PLATFORMS, "ffmpeg": bool(FFMPEG), "videos": n, "artists": folders or arts,
+            "error": _tv["error"], "font": bool(_tv_font())}
+
+@api.get("/api/admin/tv")
+def api_admin_tv(req: Request):
+    _require_admin(req)
+    return _tv_admin_view()
+
+@api.post("/api/admin/tv")
+async def api_admin_tv_set(req: Request):
+    _require_admin(req)
+    b = await req.json()
+    act = b.get("action")
+    if act in ("stop",):
+        tv_stop(); cfg = load_config(); cfg.setdefault("tv", {})["enabled"] = False; save_config(cfg)
+        return _tv_admin_view()
+    if act == "skip":
+        if _tv["running"]:
+            _tv["gen"] = _tv.get("gen", 0) + 1
+        return _tv_admin_view()
+    if "cfg" in b:
+        cur = _tv_cfg(); new = b["cfg"] or {}
+        name = str(new.get("name", cur["name"])).strip()[:60] or cur["name"]
+        out = {"name": name, "mode": "artists" if new.get("mode") == "artists" else "all",
+               "artists": [str(a)[:120] for a in (new.get("artists") or [])][:200],
+               "overlay_name": bool(new.get("overlay_name", True)), "overlay_now": bool(new.get("overlay_now", True)),
+               "quality": "1080" if str(new.get("quality")) == "1080" else "720", "enabled": cur["enabled"]}
+        old = {d["id"]: d for d in cur["dests"]}; dests = []
+        for d in (b.get("dests") if "dests" in b else cur["dests"])[:6]:
+            plat = d.get("platform") if d.get("platform") in TV_PLATFORMS else "custom"
+            url = str(d.get("url") or TV_PLATFORMS[plat]["url"]).strip()[:300]
+            if url and not re.match(r"^rtmps?://", url, re.I):
+                raise HTTPException(400, "Rebroadcast addresses start with rtmp:// or rtmps://")
+            did = str(d.get("id") or secrets.token_hex(4))[:16]
+            key = str(d.get("key") or "").strip()[:300] or (old.get(did) or {}).get("key", "")   # blank keeps the saved key
+            dests.append({"id": did, "platform": plat, "url": url, "key": key, "enabled": bool(d.get("enabled", True)),
+                          "label": str(d.get("label") or TV_PLATFORMS[plat]["name"])[:40]})
+        out["dests"] = dests
+        cfg = load_config(); cfg["tv"] = out; save_config(cfg)
+    if act in ("start", "restart"):
+        if not FFMPEG:
+            raise HTTPException(400, "Music TV needs ffmpeg")
+        if not _video_dir():
+            raise HTTPException(400, "Add a music videos folder first")
+        if act == "restart":
+            tv_stop(); sleep(0.5)
+        cfg = load_config(); cfg.setdefault("tv", {})["enabled"] = True; save_config(cfg)
+        tv_start()
+    return _tv_admin_view()
 init_dupes_db()          # runs last: init_db() needs helpers defined further down
 init_mixes_db()
 
