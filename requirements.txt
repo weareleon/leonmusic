@@ -3,3 +3,4 @@ uvicorn
 mutagen
 pystray
 pillow
+psutil

@@ -17,6 +17,12 @@ A self-hosted music player that lives in your system tray. Point it at a folder 
 - **Light and dark themes**, responsive layout, mobile friendly.
 - Just two files: `leon_music.py` (server and tray app) and `frontend.html` (the player UI).
 
+## What's new in 2.7.1
+
+- **Server status page**: open `/status` to see how the computer running leon.music is doing: CPU, memory, storage, uptime, listeners, the library, radio stations and Music TV, with anything that needs attention at the top.
+- **Setup wizard**: animated red 3D ribbons, a *Make it yours* step (server name, accent colour, light or dark), and an intro after setup that turns the ribbons into your server's logo.
+- Website: a shorter feature list and a fixed Jam screenshot layout.
+
 ## What's new in 2.7
 
 - **📺 Music TV**: turn your music videos into a live channel that plays around the clock, with your channel name and the song on screen. Everyone on your server can tune in from the Music Videos page, and you can rebroadcast it to YouTube Live, Twitch, Kick or any RTMP server. Needs ffmpeg.
