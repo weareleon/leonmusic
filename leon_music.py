@@ -497,7 +497,7 @@ api = FastAPI(title="leon.music", docs_url=None, redoc_url=None)
 # No CORS middleware: the player is served from this same origin, so cross-site pages get no access.
 
 # ── Library access gate (optional library password) ──────────────────────────
-_OPEN_PATHS = {"/api/status", "/api/setup", "/api/setup/check", "/api/setup/covers", "/api/library/login", "/api/library/logout",
+_OPEN_PATHS = {"/api/status", "/api/setup", "/api/setup/check", "/api/library/login", "/api/library/logout",
                "/api/admin/login", "/api/admin/check", "/api/auth/me", "/api/auth/login", "/api/auth/logout"}
 
 def _lib_locked() -> bool:
@@ -599,6 +599,11 @@ async def api_setup(req: Request):
             raise HTTPException(400, f"Video folder not found: {vdir}")
         upd["video_dir"] = str(vdir)
     upd["video_banner_dismissed"] = True                 # new installs were asked in the wizard already
+    acc = _clean_color(body.get("accent") or "")
+    if acc:
+        upd["accent"] = acc; state["accent"] = acc
+    if body.get("theme") in THEME_IDS:
+        upd["default_theme"] = body.get("theme")
     update_config(**upd)
     threading.Thread(target=scan_library, daemon=True).start()
     if vraw:
@@ -640,69 +645,6 @@ async def api_setup_check(req: Request):
                 "artists": sorted(folders, key=str.lower)[:8], "artist_count": len(folders)}
     return {"ok": True, "path": str(p), "default": default, "songs": n, "partial": partial,
             "playlists": sorted(folders, key=str.lower)[:8], "playlist_count": len(folders)}
-
-_setup_cover_cache: dict = {}
-
-@api.post("/api/setup/covers")
-async def api_setup_covers(req: Request):
-    """Setup wizard background: small covers read straight from the chosen music folder (first run only)."""
-    if load_config().get("music_dir"):
-        _require_admin(req)
-    raw = ((await req.json()).get("music_dir") or "").strip()
-    p = Path(os.path.normpath(raw or str(Path.home() / "Music"))).expanduser()
-    if not p.is_dir():
-        return {"covers": []}
-    key = str(p)
-    if key in _setup_cover_cache:
-        return {"covers": _setup_cover_cache[key]}
-    def collect():
-        import base64, hashlib, random as _r
-        albums, t0 = [], _now()
-        for root, dirs, files in os.walk(p):           # one entry per folder that holds music (≈ one album)
-            dirs[:] = [d for d in dirs if not d.startswith(".")]
-            audio = sorted(f for f in files if os.path.splitext(f)[1].lower() in AUDIO_EXTS)
-            if audio:
-                albums.append((root, files, audio))
-            if _now() - t0 > 3 or len(albums) > 4000:
-                break
-        if len(albums) > 60:                            # spread the picks over the whole library, not just "A…"
-            step = len(albums) / 60
-            albums = [albums[int(i * step)] for i in range(60)]
-        _r.shuffle(albums)
-        out, seen = [], set()
-        for root, files, audio in albums:
-            if len(out) >= 36 or _now() - t0 > 8:
-                break
-            data = None
-            for f in files:
-                if f.lower() in ("cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png"):
-                    try:
-                        data = Path(root, f).read_bytes()
-                    except OSError:
-                        pass
-                    break
-            if not data:
-                for f in audio[:3]:
-                    data = read_tags(Path(root, f)).get("cover_data")
-                    if data:
-                        break
-            if not data:
-                continue
-            h = hashlib.md5(data).hexdigest()
-            if h in seen:
-                continue
-            seen.add(h)
-            try:
-                im = Image.open(io.BytesIO(data)).convert("RGB")
-                im.thumbnail((220, 220))
-                buf = io.BytesIO(); im.save(buf, "JPEG", quality=78)
-                out.append("data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode())
-            except Exception:
-                continue
-        return out
-    covers = await run_in_threadpool(collect)
-    _setup_cover_cache[key] = covers
-    return {"covers": covers}
 
 @api.get("/api/scan/start")
 def api_scan_start(req: Request):
@@ -1662,6 +1604,7 @@ async def _lifespan(_app):
     threading.Thread(target=_scrobble_loop, daemon=True, name="scrobble").start()
     threading.Thread(target=lambda: scan_videos(), daemon=True, name="videos").start()
     threading.Thread(target=lambda: tv_autostart(), daemon=True, name="music-tv-start").start()
+    threading.Thread(target=lambda: _stat_sampler(), daemon=True, name="stats").start()
     yield
     tv_stop()
 
@@ -6081,7 +6024,7 @@ import xml.etree.ElementTree as _ET
 import random as _random
 import subprocess as _subprocess
 
-APP_VERSION = "2.7.0"
+APP_VERSION = "2.7.1"
 SUBSONIC_VERSION = "1.16.1"
 _SUB_ARTICLES = "The El La Los Las Le Les Die Der Das"
 
@@ -8760,6 +8703,179 @@ init_dupes_db()          # runs last: init_db() needs helpers defined further do
 init_mixes_db()
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+
+# ── Server status page (/status): how the computer running leon.music is doing ───────────────────────
+try:
+    import psutil as _ps                                   # optional: CPU and memory need it
+except Exception:
+    _ps = None
+import platform as _platform
+_BOOT_T = _now()
+_stat_hist: list = []                                     # [(t, cpu %, ram %)] for the last hour, every 30 s
+
+def _stat_sampler():
+    if not _ps:
+        return
+    _ps.cpu_percent(None)
+    while True:
+        sleep(30)
+        try:
+            _stat_hist.append((_now(), _ps.cpu_percent(None), _ps.virtual_memory().percent))
+            del _stat_hist[:-120]
+        except Exception:
+            pass
+
+def _disk(label: str, p) -> Optional[dict]:
+    import shutil as _sh
+    try:
+        if not p or not Path(p).exists():
+            return None
+        du = _sh.disk_usage(str(p))
+        return {"label": label, "total": du.total, "free": du.free, "used_pct": round(du.used / du.total * 100, 1)}
+    except Exception:
+        return None
+
+@api.get("/api/server-status")
+def api_server_status():
+    issues = []
+    out = {"version": APP_VERSION, "name": state["name"], "uptime": _now() - _BOOT_T,
+           "os": f"{_platform.system()} {_platform.release()}", "python": _platform.python_version(),
+           "cpu": None, "ram": None, "proc_ram": None, "cores": os.cpu_count(), "history": [], "psutil": bool(_ps)}
+    if _ps:
+        try:
+            vm = _ps.virtual_memory()
+            out["cpu"] = _ps.cpu_percent(interval=0.3)
+            out["ram"] = {"total": vm.total, "used": vm.total - vm.available, "pct": vm.percent}
+            out["proc_ram"] = _ps.Process().memory_info().rss
+            out["history"] = [{"t": t, "cpu": c, "ram": r} for t, c, r in _stat_hist]
+            if out["cpu"] > 90:
+                issues.append("The processor is very busy")
+            if vm.percent > 92:
+                issues.append("Memory is nearly full")
+        except Exception:
+            pass
+    disks = [d for d in (_disk("Music folder", state.get("music_dir")), _disk("Data folder", CONFIG_PATH.parent),
+                         _disk("Music videos", _video_dir())) if d]
+    seen, uniq = set(), []
+    for d in disks:                                       # several folders on one drive: show the drive once
+        k = (d["total"], d["free"] // (1 << 26))
+        if k in seen:
+            continue
+        seen.add(k); uniq.append(d)
+        if d["free"] < 2 * 1024 ** 3 or d["used_pct"] > 97:
+            issues.append(f"Disk with the {d['label'].lower()} is nearly full")
+    out["disks"] = uniq
+    db = get_db()
+    out["library"] = {"songs": db.execute("SELECT COUNT(*) FROM songs").fetchone()[0],
+                      "albums": db.execute("SELECT COUNT(DISTINCT album) FROM songs").fetchone()[0],
+                      "artists": db.execute("SELECT COUNT(DISTINCT COALESCE(album_artist,artist)) FROM songs").fetchone()[0]}
+    try:
+        out["library"]["videos"] = db.execute("SELECT COUNT(*) FROM videos").fetchone()[0] if _video_dir() else 0
+    except Exception:
+        out["library"]["videos"] = 0
+    out["activity"] = {"plays_hour": db.execute("SELECT COUNT(*) FROM plays WHERE played_at>?", (_now() - 3600,)).fetchone()[0],
+                       "listeners_now": db.execute("SELECT COUNT(DISTINCT listener) FROM plays WHERE played_at>?", (_now() - 600,)).fetchone()[0],
+                       "jams": len(_jams), "tv_live": bool(_tv.get("running") and _tv.get("now")), "tv_viewers": len(_tv.get("clients", ()))}
+    db.close()
+    out["scanning"] = state["scanning"]
+    if state.get("scan_error"):
+        issues.append("The last library scan failed")
+    st = []
+    for sid, s_ in list(_bc_status.items()):
+        info = _bc_station(sid) or {}
+        st.append({"name": info.get("name") or sid, "state": s_.get("state", "off")})
+        if s_.get("state") == "error":
+            issues.append(f"Radio station {info.get('name') or sid} is off air")
+    out["stations"] = st
+    if _tv.get("error"):
+        issues.append(f"Music TV: {_tv['error']}")
+    out["issues"] = issues
+    return out
+
+@api.get("/status", response_class=HTMLResponse)
+def serve_status():
+    return HTMLResponse(STATUS_HTML)
+
+STATUS_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Server status · leon.music</title><link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0b0b0d;--bg2:#141417;--bg3:#1d1d22;--fg:#f4f4f6;--fg2:#a2a2ad;--fg3:#6b6b75;--border:#26262c;--accent:#e5282a;--ok:#22c55e;--warn:#f5a524;--bad:#ef4444}
+@media (prefers-color-scheme:light){:root{--bg:#f6f6f8;--bg2:#fff;--bg3:#eeeef1;--fg:#141417;--fg2:#5b5b66;--fg3:#8d8d98;--border:#e3e3e8}}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font-family:Montserrat,system-ui,sans-serif;min-height:100vh}
+.wrap{max-width:980px;margin:0 auto;padding:36px 20px 60px}
+.top{display:flex;align-items:center;gap:10px;margin-bottom:28px}
+.top a{color:var(--fg);text-decoration:none;font-weight:900;font-size:20px;letter-spacing:-.5px;display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--accent)}
+.top span{margin-left:auto;font-size:12px;color:var(--fg3);font-weight:600}
+.hero{border-radius:20px;padding:26px 28px;margin-bottom:22px;display:flex;align-items:center;gap:18px;border:1px solid var(--border);
+  background:linear-gradient(120deg,color-mix(in srgb,var(--c) 22%,var(--bg2)),var(--bg2) 70%)}
+.hero i{flex:none;width:18px;height:18px;border-radius:50%;background:var(--c);box-shadow:0 0 0 6px color-mix(in srgb,var(--c) 25%,transparent);animation:p 2s infinite}
+@keyframes p{50%{box-shadow:0 0 0 11px color-mix(in srgb,var(--c) 8%,transparent)}}
+.hero b{display:block;font-size:26px;font-weight:900;letter-spacing:-.8px}
+.hero small{display:block;color:var(--fg2);font-size:13px;margin-top:4px;line-height:1.5}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:16px 18px;min-width:0}
+.card small{display:block;font-size:10px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--fg3);margin-bottom:8px}
+.card b{display:block;font-size:26px;font-weight:900;letter-spacing:-1px;font-variant-numeric:tabular-nums}
+.card span{display:block;font-size:12px;color:var(--fg2);margin-top:3px}
+.bar{height:6px;border-radius:3px;background:var(--bg3);overflow:hidden;margin-top:10px}.bar div{height:100%;border-radius:3px;background:var(--c,var(--accent))}
+h2{font-size:15px;font-weight:800;margin:26px 0 12px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);font-size:13.5px}
+.row:last-child{border-bottom:none}.row .k{color:var(--fg2);flex:1}.row .v{font-weight:700;text-align:right}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700}.pill::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--c)}
+svg{width:100%;height:90px;display:block}
+.note{font-size:12px;color:var(--fg3);margin-top:28px;line-height:1.6}
+.err{padding:40px;text-align:center;color:var(--fg2)}.err a{color:var(--accent)}
+@media(max-width:760px){.grid{grid-template-columns:1fr 1fr}.two{grid-template-columns:1fr}.hero b{font-size:21px}}
+</style></head><body><div class="wrap">
+<div class="top"><a href="/"><span class="dot"></span><span id="nm">leon.music</span></a><span id="upd"></span></div>
+<div id="app"><div class="err">Loading…</div></div>
+<div class="note">This page refreshes every 10 seconds. CPU and memory history covers the last hour while the server is running.</div>
+</div><script>
+const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const gb=n=>n>=1e12?(n/1e12).toFixed(2)+' TB':(n/1e9).toFixed(1)+' GB',mb=n=>(n/1048576).toFixed(0)+' MB';
+const dur=s=>{s=Math.floor(s);const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return d?`${d}d ${h}h`:h?`${h}h ${m}m`:`${m}m`;};
+const col=p=>p>90?'var(--bad)':p>75?'var(--warn)':'var(--ok)';
+function spark(h,key,c){if(h.length<2)return'<div style="font-size:12px;color:var(--fg3);padding:30px 0">Collecting… the chart fills in over the next few minutes.</div>';
+  const W=600,H=90,pts=h.map((x,i)=>[i/(h.length-1)*W,H-4-(x[key]/100)*(H-8)]);
+  const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  return`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${d} L${W} ${H} L0 ${H} Z" fill="${c}" opacity=".15"/><path d="${d}" fill="none" stroke="${c}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;}
+async function load(){
+  let r;try{r=await fetch('/api/server-status');}catch(e){$('app').innerHTML='<div class="err">Can\'t reach the server.</div>';return;}
+  if(r.status===401){$('app').innerHTML='<div class="err">Log in to leon.music to see the server status. <a href="/">Open leon.music</a></div>';return;}
+  const d=await r.json();$('nm').textContent=d.name;document.title=`Server status · ${d.name}`;
+  const ok=!d.issues.length,c=ok?'var(--ok)':'var(--warn)';
+  const card=(t,b,s,p,cc)=>`<div class="card"><small>${t}</small><b>${b}</b><span>${s}</span>${p!=null?`<div class="bar"><div style="width:${Math.min(100,p)}%;--c:${cc||col(p)}"></div></div>`:''}</div>`;
+  let h=`<div class="hero" style="--c:${c}"><i></i><div><b>${ok?'Everything is running smoothly':'Running, with '+d.issues.length+' thing'+(d.issues.length>1?'s':'')+' to check'}</b>
+    <small>${ok?`Up for ${dur(d.uptime)} on ${esc(d.os)}.`:d.issues.map(esc).join(' · ')}</small></div></div><div class="grid">`;
+  h+=d.cpu!=null?card('Processor',Math.round(d.cpu)+'%',`${d.cores} cores`,d.cpu):card('Processor','–','Install psutil to see this',null);
+  h+=d.ram?card('Memory',Math.round(d.ram.pct)+'%',`${gb(d.ram.used)} of ${gb(d.ram.total)} · leon.music ${mb(d.proc_ram)}`,d.ram.pct):card('Memory','–','Install psutil to see this',null);
+  h+=card('Uptime',dur(d.uptime),`leon.music ${esc(d.version)}`);
+  h+=card('Listening now',d.activity.listeners_now,`${d.activity.plays_hour} plays in the last hour`);
+  h+='</div>';
+  if(d.history.length||d.cpu!=null)h+=`<div class="two"><div class="card"><small>Processor · last hour</small>${spark(d.history,'cpu','var(--accent)')}</div>
+    <div class="card"><small>Memory · last hour</small>${spark(d.history,'ram','#7c3aed')}</div></div>`;
+  h+=`<h2>Storage</h2><div class="grid">${d.disks.map(x=>card(x.label,gb(x.free)+' free',`of ${gb(x.total)}`,x.used_pct)).join('')}</div>`;
+  const L=d.library,A=d.activity;
+  h+=`<div class="two"><div><h2>Library</h2><div class="card">
+    <div class="row"><span class="k">Songs</span><span class="v">${L.songs.toLocaleString()}</span></div>
+    <div class="row"><span class="k">Albums</span><span class="v">${L.albums.toLocaleString()}</span></div>
+    <div class="row"><span class="k">Artists</span><span class="v">${L.artists.toLocaleString()}</span></div>
+    <div class="row"><span class="k">Music videos</span><span class="v">${L.videos.toLocaleString()}</span></div>
+    <div class="row"><span class="k">Library scan</span><span class="v">${d.scanning?'Scanning now':'Idle'}</span></div></div></div>
+    <div><h2>Services</h2><div class="card">
+    ${d.stations.map(s=>`<div class="row"><span class="k">📻 ${esc(s.name)}</span><span class="v pill" style="--c:${s.state==='live'?'var(--ok)':s.state==='error'?'var(--bad)':'var(--fg3)'}">${s.state==='live'?'On air':s.state==='error'?'Error':'Off'}</span></div>`).join('')}
+    <div class="row"><span class="k">📺 Music TV</span><span class="v pill" style="--c:${A.tv_live?'var(--ok)':'var(--fg3)'}">${A.tv_live?`Live · ${A.tv_viewers} watching`:'Off'}</span></div>
+    <div class="row"><span class="k">🎧 Jams</span><span class="v">${A.jams}</span></div>
+    <div class="row"><span class="k">Python</span><span class="v">${esc(d.python)}</span></div></div></div></div>`;
+  $('app').innerHTML=h;$('upd').textContent='Updated '+new Date().toLocaleTimeString();
+}
+load();setInterval(load,10000);
+</script></body></html>"""
+
 def main():
     global _tray_icon
     if len(sys.argv) > 1 and sys.argv[1].lower() == "admin":     # python leon_music.py admin add <username>

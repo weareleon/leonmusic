@@ -40,24 +40,44 @@ body:not(.booted) #setup{visibility:hidden}   /* don't flash the setup wizard wh
 /* ── Setup wizard (first run) ── */
 #setup.sw{padding:0;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);align-items:stretch;justify-content:stretch;overflow:hidden}
 .sw-hero{position:relative;overflow:hidden;background:#09090b;isolation:isolate}
-.sw-blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.55;z-index:-1;animation:swFloat 18s ease-in-out infinite alternate}
-.sw-blob.b1{width:60%;aspect-ratio:1;left:-10%;top:-10%;background:var(--accent)}
-.sw-blob.b2{width:55%;aspect-ratio:1;right:-15%;top:30%;background:#7c3aed;animation-delay:-6s}
-.sw-blob.b3{width:50%;aspect-ratio:1;left:20%;bottom:-20%;background:#ff9f0a;animation-delay:-12s;opacity:.35}
-@keyframes swFloat{to{transform:translate(8%,10%) scale(1.15)}}
-.sw-wall{position:absolute;inset:-20% -10%;display:flex;gap:14px;transform:rotate(-12deg);opacity:.9}
-.sw-col{flex:1;display:flex;flex-direction:column;gap:14px;animation:swScroll 38s linear infinite}
-.sw-col:nth-child(2n){animation-direction:reverse;animation-duration:46s}
-.sw-col:nth-child(3n){animation-duration:42s}
-@keyframes swScroll{to{transform:translateY(-50%)}}
-.sw-tile{flex:none;aspect-ratio:1;border-radius:14px;overflow:hidden;background:#1b1b20;box-shadow:0 12px 30px rgba(0,0,0,.35);transition:opacity .6s}
-.sw-tile.g{position:relative}
-.sw-tile.g::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 30% 25%,rgba(255,255,255,.35),transparent 45%),linear-gradient(0deg,rgba(0,0,0,.25),transparent 60%)}
-.sw-tile.g span{position:absolute;left:10%;bottom:9%;right:10%;font-weight:900;font-size:13px;letter-spacing:-.3px;color:#fff;z-index:1;line-height:1.1;text-shadow:0 1px 8px rgba(0,0,0,.3)}
-.sw-tile img,.sw-tile canvas{width:100%;height:100%;object-fit:cover;display:block}
-.sw-tile.fresh{animation:swPop .7s cubic-bezier(.2,1.4,.4,1)}
-@keyframes swPop{from{transform:scale(.6);opacity:0}}
-.sw-shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(9,9,11,.15),rgba(9,9,11,.55) 55%,rgba(9,9,11,.96));z-index:1}
+.sw-fx{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:0}
+/* setup: "make it yours" + boot intro */
+.sw-sw{display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 20px}
+.sw-sw button{width:36px;height:36px;border-radius:50%;border:3px solid transparent;cursor:pointer;box-shadow:inset 0 0 0 2px rgba(0,0,0,.15);transition:transform .15s}
+.sw-sw button:hover{transform:scale(1.1)}.sw-sw button.on{border-color:var(--fg);transform:scale(1.1)}
+.sw-seg{display:flex;gap:8px;margin:6px 0 24px}
+.sw-seg button{flex:1;padding:12px;border-radius:12px;border:1.5px solid var(--border);background:var(--bg2);color:var(--fg);font:700 13px 'Montserrat',sans-serif;cursor:pointer}
+.sw-seg button.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg2))}
+.sw-lbl{font-size:10px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--fg3)}
+#setup.boot .sw-panel{grid-column:2;grid-row:1;transform:translateX(105%);opacity:0;transition:transform 1s cubic-bezier(.7,0,.3,1),opacity .7s .2s}
+#setup.boot .sw-brand{transform:translate(-40px,90px);opacity:0;transition:transform .9s cubic-bezier(.7,0,.3,1),opacity .6s}
+#setup.boot .sw-shade{opacity:0;transition:opacity 1s}
+.sw-intro{position:absolute;inset:0;z-index:5;display:none;align-items:center;justify-content:center;color:#fff;pointer-events:none;overflow:hidden}
+.sw-intro::before{content:'';position:absolute;inset:0;background:radial-gradient(48% 38% at 50% 56%,rgba(8,4,6,.82),rgba(8,4,6,.45) 60%,transparent 85%);opacity:0;transition:opacity 1s}
+.sw-intro.txt::before{opacity:1}
+#setup.boot .sw-intro{display:flex}
+.si-logo{position:absolute;display:flex;align-items:center;gap:.22em;font-size:clamp(46px,9vw,124px);font-weight:900;letter-spacing:-.055em;
+  opacity:0;transform:scale(.8);filter:blur(14px);transition:opacity 1.2s,transform 1.4s cubic-bezier(.2,.8,.2,1),filter 1.2s}
+.si-logo .dot{width:.26em;height:.26em;border-radius:50%;background:var(--accent);box-shadow:0 0 .5em var(--accent)}
+.si-logo.on{opacity:1;transform:none;filter:none}
+.si-logo.up{transform:translateY(-36vh) scale(.3)}
+.si-slide,.si-welcome{position:absolute;left:0;right:0;margin:0 auto;text-align:center;max-width:760px;padding:0 24px;text-shadow:0 2px 24px rgba(0,0,0,.7);opacity:0;transform:translateY(26px);transition:opacity .7s,transform .8s cubic-bezier(.2,.8,.2,1)}
+.si-slide.on,.si-welcome.on{opacity:1;transform:none}
+.si-ic{width:86px;height:86px;border-radius:26px;margin:0 auto 22px;display:flex;align-items:center;justify-content:center;font-size:38px;
+  background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 40%,#7c3aed));box-shadow:0 18px 50px color-mix(in srgb,var(--accent) 45%,transparent)}
+.si-slide small,.si-welcome small{display:block;font-size:11px;font-weight:800;letter-spacing:2.4px;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+.si-slide b,.si-welcome b{display:block;font-size:clamp(34px,5.4vw,64px);font-weight:900;letter-spacing:-.045em;line-height:1.02;margin-bottom:14px}
+.si-slide span,.si-welcome span{display:block;font-size:clamp(15px,1.6vw,19px);font-weight:500;opacity:.78;line-height:1.5}
+.si-welcome .btn-primary{pointer-events:auto;margin-top:30px;padding:17px 34px;font-size:15px;border-radius:99px;flex:none;box-shadow:0 16px 40px color-mix(in srgb,var(--accent) 40%,transparent)}
+.si-dots{position:absolute;bottom:44px;left:50%;transform:translateX(-50%);display:flex;gap:8px;opacity:0;transition:opacity .5s}
+.si-dots.on{opacity:1}.si-dots i{width:34px;height:3px;border-radius:2px;background:rgba(255,255,255,.22);overflow:hidden;position:relative}
+.si-dots i::after{content:'';position:absolute;inset:0;background:#fff;transform:scaleX(0);transform-origin:left}
+.si-dots i.done::after{transform:none}.si-dots i.on::after{transition:transform 2.6s linear;transform:none}
+.si-skip{position:absolute;top:22px;right:24px;pointer-events:auto;background:rgba(255,255,255,.1);border:none;color:#fff;font:700 12.5px 'Montserrat',sans-serif;
+  padding:9px 16px;border-radius:99px;cursor:pointer;backdrop-filter:blur(8px)}
+.si-skip:hover{background:rgba(255,255,255,.2)}
+@media(max-width:860px){#setup.boot .sw-panel{grid-column:1;grid-row:2;transform:translateY(105%)}}
+.sw-shade{position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(9,9,11,0),rgba(9,9,11,.55) 55%,rgba(9,9,11,.96));z-index:1}
 .sw-brand{position:absolute;left:48px;right:48px;bottom:44px;z-index:2;color:#fff}
 .sw-mark{display:flex;align-items:center;gap:12px;font-size:44px;font-weight:900;letter-spacing:-2px;line-height:1}
 .sw-mark .dot{width:16px;height:16px;border-radius:50%;background:var(--accent);box-shadow:0 0 24px var(--accent)}
@@ -1599,8 +1619,7 @@ textarea.setup-input{resize:vertical;font-family:inherit;margin-bottom:12px}
 <!-- ══ SETUP ══ -->
 <div id="setup" class="sw">
   <div class="sw-hero" aria-hidden="true">
-    <div class="sw-blob b1"></div><div class="sw-blob b2"></div><div class="sw-blob b3"></div>
-    <div class="sw-wall" id="swWall"></div>
+    <canvas class="sw-fx" id="swFx"></canvas>
     <div class="sw-shade"></div>
     <div class="sw-brand"><div class="sw-mark"><span class="dot"></span>leon.music</div>
       <div class="sw-tag">Your music, streamed from your own computer to every screen you own. No cloud, no subscriptions.</div></div>
@@ -1653,13 +1672,18 @@ textarea.setup-input{resize:vertical;font-family:inherit;margin-bottom:12px}
       </div>
       <div class="setup-step" id="s3">
         <div class="sw-eyebrow">Step 3 of 5</div>
-        <div class="sw-h">Name your library.</div>
-        <div class="sw-sub">Everyone who uses your server sees this name. You can change it later in the admin panel.</div>
-        <div class="sw-field"><input class="sw-in" type="text" id="inName" placeholder="leon.music" maxlength="40"></div>
+        <div class="sw-h">Make it yours.</div>
+        <div class="sw-sub">Name your server and pick its colour. Everyone who uses it sees these, and you can change them later in the admin panel.</div>
+        <div class="sw-lbl">Server name</div>
+        <div class="sw-field" style="margin-top:6px"><input class="sw-in" type="text" id="inName" placeholder="leon.music" maxlength="40"></div>
         <div class="sw-prev">
           <div class="sw-pv"><small>Sidebar</small><div class="sw-pv-side"><span class="dot"></span><span id="swPvSide">leon.music</span></div></div>
           <div class="sw-pv"><small>Browser tab</small><div class="sw-pv-tab"><span class="dot"></span><span id="swPvTab">leon.music</span></div></div>
         </div>
+        <div class="sw-lbl">Accent colour</div>
+        <div class="sw-sw" id="swSw"></div>
+        <div class="sw-lbl">Look</div>
+        <div class="sw-seg" id="swLook"><button data-l="">Match device</button><button data-l="dark">Dark</button><button data-l="light">Light</button></div>
         <div class="sw-acts">
           <button class="btn-secondary" onclick="goStep(7)">Back</button>
           <button class="btn-primary" onclick="goStep(4)">Continue →</button>
@@ -1697,6 +1721,13 @@ textarea.setup-input{resize:vertical;font-family:inherit;margin-bottom:12px}
         <div class="sw-next">Next: create accounts for yourself and your friends in the <b>admin panel → Accounts</b>, and pick your colours and themes in Settings.</div>
       </div>
     </div>
+  </div>
+  <div class="sw-intro" id="swIntro">
+    <button class="si-skip" id="siSkip">Skip intro</button>
+    <div class="si-logo" id="siLogo"><span class="dot"></span><span id="siName">leon.music</span></div>
+    <div id="siSlides"></div><div class="si-dots" id="siDots"></div>
+    <div class="si-welcome" id="siWelcome"><small>All set</small><b>Welcome to your music.</b><span id="siStats"></span>
+      <button class="btn-primary" onclick="enterApp()">Open your library →</button></div>
   </div>
 </div>
 
@@ -2103,49 +2134,54 @@ function goStep(n){
     rail.querySelectorAll('[data-s]').forEach(d=>{const k=+d.dataset.s;d.classList.toggle('done',pos(k)<pos(n)||n===6);d.classList.toggle('on',k===n);});}
   const f=st.querySelector('input');if(f&&window.innerWidth>860)setTimeout(()=>f.focus(),60);
   if(n===2&&!_swChecked)swCheckPath();
-  if(n===3)swNamePreview();
+  if(n===3){swNamePreview();swCustomInit();}
 }
-// hero: a slowly scrolling wall of generated covers; real ones replace them while the library scans
-let _swTiles=[],_swCovers=new Set();
-const _SW_GRAD=[['var(--accent)','#ff9f0a'],['#7c3aed','#ff2d87'],['#0a84ff','#30d5c8'],['#ff375f','#bf5af2'],['#34c759','#0a84ff'],
-  ['#ff9f0a','#ff375f'],['#5e5ce6','#64d2ff'],['var(--accent)','#7c3aed'],['#ffd60a','#ff6b00'],['#30d158','#ffd60a']];
-const _SW_WORDS=['Late Night','Heavy Rotation','New Music','Get Up!','Chill','Your Essentials','Rewind','Road Trip','Fresh Finds','Workout','Throwbacks','Focus','Party','Sunday Morning'];
-function swWall(){
-  const w=document.getElementById('swWall');if(!w||w.childElementCount)return;
-  const cols=window.innerWidth>860?5:4;
-  for(let c=0;c<cols;c++){const col=document.createElement('div');col.className='sw-col';
-    for(let k=0;k<12;k++){const t=document.createElement('div');t.className='sw-tile';
-      const g=_SW_GRAD[(c*5+k*3)%_SW_GRAD.length];t.classList.add('g');
-      t.style.background=`linear-gradient(${(c*40+k*65)%360}deg,${g[0]},${g[1]})`;
-      t.innerHTML=`<span>${_SW_WORDS[(c*7+k)%_SW_WORDS.length]}</span>`;col.appendChild(t);if(k<6)_swTiles.push(t);}
-    // second half repeats the first so the scroll loops seamlessly
-    [...col.children].slice(0,6).forEach((t,i)=>{col.children[6+i].replaceWith(t.cloneNode(true));});
-    w.appendChild(col);}
-}
-let _swCoverPath=null,_swHaveReal=false;
-async function swLoadCovers(path){
-  if(path===_swCoverPath)return;_swCoverPath=path;
-  let d;try{d=await fetch('/api/setup/covers',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_tok()},body:JSON.stringify({music_dir:path})}).then(r=>r.json());}catch(e){return;}
-  const cv=(d&&d.covers)||[];if(cv.length<4||_swCoverPath!==path)return;
-  _swHaveReal=true;
-  document.querySelectorAll('#swWall .sw-col').forEach((col,c)=>{
-    const kids=[...col.children],half=kids.length/2;
-    for(let i=0;i<half;i++){const src=cv[(c*half+i*(c%2?3:1))%cv.length];
-      [kids[i],kids[i+half]].forEach((t,j)=>{if(!t)return;
-        const img=new Image();img.alt='';img.src=src;t.classList.remove('g');t.style.background='';t.innerHTML='';t.appendChild(img);
-        t.classList.remove('fresh');void t.offsetWidth;if(!j)t.classList.add('fresh');t.dataset.real='1';});}
-  });
-}
-async function swPullCovers(){
-  if(_swHaveReal)return;
-  let al=[];try{al=await fetch('/api/albums').then(r=>r.ok?r.json():[]);}catch(e){}
-  const fresh=al.filter(a=>a.cover_id&&!_swCovers.has(a.cover_id)).slice(0,6);
-  fresh.forEach(a=>{_swCovers.add(a.cover_id);
-    const free=_swTiles.filter(t=>!t.dataset.real);if(!free.length)return;
-    const t=free[Math.floor(Math.random()*free.length)];t.dataset.real='1';
-    const img=new Image();img.onload=()=>{t.innerHTML='';t.appendChild(img);t.classList.remove('fresh','g');t.style.background='';void t.offsetWidth;t.classList.add('fresh');
-      const col=t.parentNode,i=[...col.children].indexOf(t);if(i<6&&col.children[i+6]){const tw=col.children[i+6];tw.innerHTML='';tw.classList.remove('g');tw.style.background='';tw.appendChild(img.cloneNode());}};
-    img.src='/api/cover/'+a.cover_id;});
+// hero: glowing red ribbons swinging through 3D space (canvas, no libraries)
+let _swRaf=0,_swK=0,_swKT=0;
+function swFx(){
+  const cv=document.getElementById('swFx');if(!cv||_swRaf)return;
+  const ctx=cv.getContext('2d'),still=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const acc=()=>(getComputedStyle(document.documentElement).getPropertyValue('--accent')||'#e5282a').trim();
+  // three ribbons: each is a sheet of thin lines that twists as it flows
+  const R=[{c:null,a:1,f:1.6,ph:0,y:-.05,amp:.26,tw:1.1,sp:.22},
+           {c:'#ff2d55',a:.8,f:1.15,ph:2.1,y:.16,amp:.2,tw:-.8,sp:.17},
+           {c:'#ff6a3d',a:.6,f:2.1,ph:4.2,y:-.24,amp:.15,tw:1.5,sp:.28}];
+  const LINES=30,STEPS=110;
+  let W=0,H=0,dpr=1;
+  const size=()=>{const r=cv.getBoundingClientRect();dpr=Math.min(2,devicePixelRatio||1);W=r.width;H=r.height;cv.width=W*dpr;cv.height=H*dpr;};
+  size();addEventListener('resize',size);
+  const draw=t=>{
+    const su=document.getElementById('setup');
+    if(!su||getComputedStyle(su).display==='none'){_swRaf=0;removeEventListener('resize',size);return;}   // setup done: stop drawing
+    if(!W||Math.abs(cv.getBoundingClientRect().width-W)>1||Math.abs(cv.getBoundingClientRect().height-H)>1)size();
+    _swK+=(_swKT-_swK)*.035;const K=_swK;R[0].c=acc();
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    const bg=ctx.createRadialGradient(W*.35,H*.45,0,W*.35,H*.45,Math.max(W,H)*.9);
+    bg.addColorStop(0,'#1a0507');bg.addColorStop(1,'#070708');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+    ctx.globalCompositeOperation='lighter';
+    const s=t/1000,F=Math.min(W,H)*1.15,cx=W*.5,cy=H*(.46+K*.04),rx=(.35+Math.sin(s*.13)*.12)*(1-K*.7),ry=Math.sin(s*.09)*.35*(1-K);
+    const cX=Math.cos(rx),sX=Math.sin(rx),cY=Math.cos(ry),sY=Math.sin(ry);
+    R.forEach(r=>{
+      for(let l=0;l<LINES;l++){
+        const v=l/(LINES-1)-.5;ctx.beginPath();
+        for(let k=0;k<=STEPS;k++){
+          const u=k/STEPS-.5,ph=u*Math.PI*2*r.f+s*r.sp*2+r.ph;
+          const twist=Math.sin(u*Math.PI*1.3+s*.25+r.ph)*r.tw+u*1.2;
+          // centre line of the ribbon, then offset across its width by the twist
+          const w=.34*(1-K*.82);
+          let x=u*3.4, y=r.y*(1-K)+Math.sin(ph)*r.amp*1.5*(1-K*.75)+v*w*Math.cos(twist), z=Math.cos(ph*.8)*.45*(1-K*.6)+v*w*Math.sin(twist);
+          let y2=y*cX-z*sX,z2=y*sX+z*cX;let x3=x*cY+z2*sY,z3=-x*sY+z2*cY;      // rotate (the whole scene swings slowly)
+          const d=F/(2.3+z3)*.95,px=cx+x3*d,py=cy+y2*d;
+          k?ctx.lineTo(px,py):ctx.moveTo(px,py);
+        }
+        const edge=1-Math.abs(v)*1.7;
+        ctx.strokeStyle=r.c;ctx.globalAlpha=Math.min(1,Math.max(.05,edge)*.5*r.a*(1+K*.9));ctx.lineWidth=1.4;ctx.stroke();
+      }
+    });
+    ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
+    if(!still)_swRaf=requestAnimationFrame(draw);else _swRaf=0;
+  };
+  _swRaf=requestAnimationFrame(draw);
 }
 let _swChecked='',_swCheckT=null,_swCheckRes=null;
 function swCheckPath(){
@@ -2157,7 +2193,7 @@ function swCheckPath(){
     let d;try{d=await fetch('/api/setup/check',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_tok()},body:JSON.stringify({music_dir:v})}).then(r=>r.json());}
     catch(e){box.innerHTML='';_swCheckRes=null;return;}
     if((document.getElementById('inPath').value.trim()||'(default)')!==_swChecked)return;   // typed again meanwhile
-    _swCheckRes=d;if(d.ok&&d.songs)swLoadCovers(v);
+    _swCheckRes=d;
     const inp=document.getElementById('inPath');if(d.default&&inp.placeholder==='Music folder')inp.placeholder=d.default;
     if(!d.ok){box.innerHTML=`<div class="sw-res bad"><span class="k">!</span><div><b>${esc(d.error)}</b><small>${esc(d.path)}</small></div></div>`;return;}
     const n=d.songs||0,pl=d.playlists||[];
@@ -2171,6 +2207,53 @@ function swPathNext(){
   const d=_swCheckRes,err=document.getElementById('pathErr');
   if(d&&!d.ok){err.textContent='Pick a folder that exists first.';document.getElementById('inPath').focus();return;}
   goStep(7);
+}
+const _SW_ACC=['#e5282a','#ff2d55','#ff6a00','#f5b301','#22c55e','#0a84ff','#7c3aed','#ec4899'];
+let _swAccent='#e5282a',_swLook='';
+function swCustomInit(){
+  const box=document.getElementById('swSw');if(!box||box.childElementCount)return;
+  _SW_ACC.forEach(c=>{const b=document.createElement('button');b.style.background=c;b.title=c;b.dataset.c=c;
+    b.onclick=()=>{_swAccent=c;applyBrandColors(c);box.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));};box.appendChild(b);});
+  box.firstChild.classList.add('on');
+  document.querySelectorAll('#swLook button').forEach(b=>{b.classList.toggle('on',b.dataset.l===_swLook);
+    b.onclick=()=>{_swLook=b.dataset.l;applyTheme(_swLook,false);document.querySelectorAll('#swLook button').forEach(x=>x.classList.toggle('on',x===b));};});
+}
+const _swSleep=ms=>new Promise(r=>setTimeout(r,ms));
+let _swBootRun=0;
+// After setup: the panel and the brand slide away, the ribbons take the screen, gather into the logo,
+// a short tour of leon.music plays, then "Welcome to your music".
+async function swBoot(stats){
+  const su=document.getElementById('setup'),hero=document.querySelector('.sw-hero'),run=++_swBootRun;
+  const name=document.getElementById('inName').value.trim()||'leon.music';
+  document.getElementById('siName').textContent=name;
+  document.getElementById('siStats').textContent=stats.songs?`${name} is ready: ${stats.songs.toLocaleString()} songs, ${stats.albums.toLocaleString()} albums and ${stats.artists.toLocaleString()} artists.`
+    :`${name} is ready. Add music to your folder and it shows up after the next scan.`;
+  const slides=[['♥','Made for You','Personal mixes that refresh every day, built from what you play.'],
+    ['◉','Live radio','Run your own stations on a schedule and broadcast them anywhere.'],
+    ['🎧','Jam','Listen together with friends, in sync, wherever they are.'],
+    ['▶','Music videos & Music TV','A full-screen video player, and your own channel that plays around the clock.'],
+    ['⟲','Rewind','Your top artists, songs and minutes, every week and every year.']];
+  document.getElementById('siSlides').innerHTML=slides.map(([i,t,d])=>`<div class="si-slide"><div class="si-ic">${i}</div><small>On leon.music</small><b>${t}</b><span>${d}</span></div>`).join('');
+  document.getElementById('siDots').innerHTML=slides.map(()=>'<i></i>').join('');
+  const logo=document.getElementById('siLogo'),sl=[...document.querySelectorAll('.si-slide')],dots=[...document.querySelectorAll('#siDots i')],wel=document.getElementById('siWelcome');
+  const welcome=()=>{if(run!==_swBootRun)return;_swBootRun++;sl.forEach(x=>x.classList.remove('on'));document.getElementById('siDots').classList.remove('on');
+    logo.classList.add('on','up');wel.classList.add('on');_swKT=.25;document.getElementById('swIntro').classList.add('txt');document.getElementById('siSkip').style.display='none';};
+  document.getElementById('siSkip').onclick=welcome;
+  // the hero grows from its column to the whole screen
+  const r=hero.getBoundingClientRect();
+  hero.style.cssText=`position:absolute;left:0;top:0;width:${r.width}px;height:${r.height}px;z-index:1;transition:width 1.1s cubic-bezier(.7,0,.3,1),height 1.1s cubic-bezier(.7,0,.3,1)`;
+  void hero.offsetWidth;su.classList.add('boot');hero.style.width='100%';hero.style.height='100%';
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){welcome();return;}
+  const ok=()=>run===_swBootRun;
+  await _swSleep(1300);if(!ok())return;_swKT=1;                       // ribbons gather into a band…
+  await _swSleep(1300);if(!ok())return;logo.classList.add('on');       // …and the logo appears out of it
+  await _swSleep(2300);if(!ok())return;logo.classList.add('up');_swKT=.45;document.getElementById('siDots').classList.add('on');document.getElementById('swIntro').classList.add('txt');
+  for(let n=0;n<slides.length;n++){
+    await _swSleep(n?0:500);if(!ok())return;
+    sl.forEach((x,k)=>x.classList.toggle('on',k===n));dots.forEach((d,k)=>{d.classList.toggle('done',k<n);d.classList.toggle('on',k===n);});
+    await _swSleep(2600);if(!ok())return;
+  }
+  welcome();
 }
 function swNamePreview(){
   const v=document.getElementById('inName').value.trim()||'leon.music';
@@ -2195,9 +2278,9 @@ async function submitSetup(){
   const name=document.getElementById('inName').value.trim()||'leon.music';
   try{
     const r=await fetch('/api/setup',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':_tok()},
-      body:JSON.stringify({music_dir:path,name,admin_password:pw1,video_dir:document.getElementById('inVidPath').value.trim()})});
+      body:JSON.stringify({music_dir:path,name,admin_password:pw1,video_dir:document.getElementById('inVidPath').value.trim(),accent:_swAccent,theme:_swLook})});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Setup failed');}
-    document.title=name;goStep(5);pollScan();
+    document.title=name;try{localStorage.setItem('lm_brand',JSON.stringify({accent:_swAccent}));}catch(_){}goStep(5);pollScan();
   }catch(e){
     if(/video folder/i.test(e.message)){goStep(7);document.getElementById('vidErr').textContent=e.message;}
     else if(/folder/i.test(e.message)){goStep(2);document.getElementById('pathErr').textContent=e.message;}
@@ -2216,23 +2299,22 @@ function pollScan(){
     target=d.found||0;file.textContent=d.file?String(d.file).split(/[\\/]/).slice(-2).join(' / '):'';
     document.getElementById('swScanL').textContent=target===1?'song found':'songs found';
     if(total)fill.style.width=Math.min(99,target/total*100)+'%';
-    if(++tick%3===0)swPullCovers();
     if(!d.scanning)idle++;else idle=0;
     if(idle>=2){clearInterval(iv);setTimeout(()=>{clearInterval(anim);count.textContent=target.toLocaleString();},400);
-      document.getElementById('swBar').classList.remove('ind');fill.style.width='100%';swPullCovers();
+      document.getElementById('swBar').classList.remove('ind');fill.style.width='100%';
       let st={};try{st=await fetch('/api/status').then(r=>r.json());}catch(e){}
       let artists=0;try{artists=(await fetch('/api/artists').then(r=>r.ok?r.json():[])).length;}catch(e){}
       const songs=st.tracks||target;
       document.getElementById('scanDone').textContent=songs?'Your library is ready to play.':'No songs were found yet. Add music to your folder and leon.music picks it up when it rescans.';
       document.getElementById('swStats').innerHTML=[[songs,'Songs'],[st.albums||0,'Albums'],[artists,'Artists']]
         .map(([n,l])=>`<div class="sw-stat"><b>${(+n).toLocaleString()}</b><small>${l}</small></div>`).join('');
-      setTimeout(()=>goStep(6),700);}
+      setTimeout(()=>swBoot({songs,albums:st.albums||0,artists}),700);}
   },700);
 }
 function enterApp(){document.getElementById('setup').style.display='none';initApp();}
 function resetSetup(){if(confirm('Reset setup and rescan?')){location.reload();}}
 (function swInit(){
-  const go=()=>{swWall();
+  const go=()=>{
     const p=document.getElementById('inPath');if(p){p.addEventListener('input',swCheckPath);}
     const n=document.getElementById('inName');if(n)n.addEventListener('input',swNamePreview);
     const w=document.getElementById('inPw1');if(w)w.addEventListener('input',swPwMeter);
@@ -6398,7 +6480,7 @@ async function routeStart(){
       if(ME&&!ME.admin&&!ME.onboarded)showOnboarding();
       else setTimeout(openFromEmailLink,300);
       refreshScrobFlag();jamResume();loadMyAppearance();loadVideoBanner();}
-    else swLoadCovers('');   // setup wizard: fill its background with covers from the music folder
+    else swFx();             // setup wizard: start its animated background
   }catch(e){/* server not responding yet, show setup */}
   finally{document.body.classList.add('booted');}
 })();

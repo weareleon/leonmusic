@@ -59,8 +59,8 @@ python leon_music.py</pre></div>
 <div class="note"><span>ℹ️</span><span>On some Linux systems you need <code>pip install -r requirements.txt --break-system-packages</code>, and the tray icon needs an appindicator backend (for example <code>sudo apt install gir1.2-appindicator3-0.1</code>).</span></div>
 
 <h2 id="first-run">First run</h2>
-<div class="window"><img class="zoomable" src="assets/setup-wizard.jpg" alt="The setup wizard, with album covers from the music folder scrolling behind it" loading="lazy"></div>
-<p>The welcome wizard fills its background with album covers from your own music folder, and asks for:</p>
+<div class="window"><img class="zoomable" src="assets/setup-wizard.jpg" alt="The setup wizard, with red 3D ribbons swinging behind it" loading="lazy"></div>
+<p>The welcome wizard asks for:</p>
 <ol><li><b>Your music folder.</b> It checks the folder as you type and tells you how many songs it found and which subfolders become playlists. leon.music only reads it and never changes your files.</li>
 <li><b>Your music videos folder</b> (optional, you can skip it). See <a href="#videos">Music videos</a>.</li>
 <li><b>A name for your library</b>, shown in the app and on generated covers, with a preview.</li>
@@ -184,7 +184,7 @@ python leon_music.py</pre></div>
 <p>New profiles share listening with <b>friends only</b>. Friends who choose <i>only me</i> are left out of your Friends Mix.</p>
 
 <h2 id="jam">Jam: listen together</h2>
-<div class="duo"><div class="window"><img class="zoomable" src="assets/jam.jpg" alt="A Jam with three people" loading="lazy"></div><div class="window" style="max-width:300px;margin:0 auto"><img class="zoomable" src="assets/m-jam.jpg" alt="The Jam bar on a phone" loading="lazy"></div></div>
+<div class="duo wide"><div class="window"><img class="zoomable" src="assets/jam.jpg" alt="A Jam with three people" loading="lazy"></div><div class="window" style="max-width:300px;margin:0 auto;width:100%"><img class="zoomable" src="assets/m-jam.jpg" alt="The Jam bar on a phone" loading="lazy"></div></div>
 <p>A <b>Jam</b> lets friends listen together, each on their own device, wherever they are. Everyone hears the same song at the same moment and adds to one shared queue.</p>
 <ol><li><b>Start a Jam</b> from <b>Up Next</b> (☰ → Start) or the <b>Friends</b> page. What you're playing, and your queue, become the Jam.</li>
 <li>Invite people: send the <b>invite link</b> or the <b>6-letter code</b>. Friends also see your Jam on their <b>Friends</b> page with a <b>Join</b> button.</li>
@@ -580,6 +580,7 @@ pyinstaller --onefile --windowed --name "leon.music" leon_music.py</pre></div>
 <tr><td><code>POST /api/jam</code>, <code>/jam/{code}/join</code>, <code>/control</code>, <code>/queue</code>, <code>GET /jam/{code}/events</code></td><td>Jams (the events stream is server-sent events)</td></tr>
 <tr><td><code>GET /api/appearance</code>, <code>GET|PATCH /api/me/appearance</code></td><td>Server and personal theme and custom CSS</td></tr>
 <tr><td><code>GET /api/explicit</code></td><td>IDs of explicit songs</td></tr>
+<tr><td><code>GET /status</code>, <code>/api/server-status</code></td><td>Server status page: health, CPU, memory, storage, library and services</td></tr>
 <tr><td><code>GET /api/artist/page?name=</code></td><td>Latest release, top songs, albums and singles for an artist page</td></tr>
 <tr><td><code>GET /api/videos</code>, <code>?artist=</code>, <code>?q=</code>, <code>/videos/{id}/stream</code>, <code>/videos/{id}/thumb</code></td><td>Music videos</td></tr>
 <tr><td><code>GET /api/tv</code>, <code>/api/tv/stream.ts</code></td><td>Music TV status and the live MPEG-TS stream</td></tr>
